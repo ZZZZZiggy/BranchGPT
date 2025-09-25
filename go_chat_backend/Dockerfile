@@ -1,5 +1,5 @@
-# 使用轻量级 Go 镜像
-FROM golang:1.21-alpine
+# 使用轻量级 Go 镜像 - 更新到 Go 1.24
+FROM golang:1.24-alpine AS builder
 
 # 设置工作目录
 WORKDIR /app
