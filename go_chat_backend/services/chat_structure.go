@@ -22,7 +22,7 @@ func GetChatHistory(docID string, ID string) ([]models.ChatNode, error) {
 	return result, nil
 }
 
-func SaveChatNode(question string, answer string, docID string, parentID string, sectionID string) (string, error) {
+func SaveChatNode(question string, answer string, docID string, parentID string, sectionID string) (string, models.ChatNode, error) {
 	ID := uuid.New().String()
 	nodeMeta := &models.ChatNode{
 		Question:  question,
@@ -34,9 +34,9 @@ func SaveChatNode(question string, answer string, docID string, parentID string,
 		SectionID: sectionID,
 	}
 	if err := DB.Create(&nodeMeta).Error; err != nil {
-		return "", err
+		return "", models.ChatNode{}, err
 	}
-	return nodeMeta.ID, nil
+	return nodeMeta.ID, *nodeMeta, nil
 }
 
 func GetChatChildren(docID string, parentID string) ([]models.ChatNode, error) {

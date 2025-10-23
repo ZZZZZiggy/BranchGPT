@@ -46,7 +46,7 @@ def analyze_text_structure(doc):
                 if should_trim:
                     i = re_start
                     continue
-# if content exists(title + content or None + content)
+            # if content exists(title + content or None + content)
             if stripped_block:
                 content = stripped_block
                 if titles:
@@ -116,7 +116,7 @@ def analyze_text_structure(doc):
 
             i += 1
 
-    # 最后一个章节别忘了加进去
+    # 最后一个章节
     if current_section:
         structured_content.append(current_section)
 

@@ -3,17 +3,18 @@ package services
 import (
 	"fmt"
 	"go_chat_backend/models"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 	"os"
 	"time"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 var DB *gorm.DB
 
 func InitPostgres() error {
 	dsn := fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=UTC",
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=prefer TimeZone=UTC",
 		os.Getenv("PG_HOST"),
 		os.Getenv("PG_USER"),
 		os.Getenv("PG_PASSWORD"),
