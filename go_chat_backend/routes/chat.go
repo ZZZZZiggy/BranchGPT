@@ -5,8 +5,7 @@ import (
 	"go_chat_backend/handlers"
 )
 
-func RegisterUserRoutes(app *fiber.App) {
+func RegisterChatRoutes(app *fiber.App, chatHandler *handlers.ChatHandler) {
 	chats := app.Group("api/chat")
-	chats.Post("/:doc_id/questions", handlers.AskQuestions)
-	chats.Get("/:doc_id/tree", handlers.GetTree)
+	chats.Post("/:doc_id/questions", chatHandler.AskQuestions)
 }

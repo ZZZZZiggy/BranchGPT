@@ -1,0 +1,74 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pdf-processor-worker-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pdf-processor-worker
+
+  # 🔥 自动扩缩容配置
+  minReplicas: 2 # 最少 2 个 worker
+  maxReplicas: 10 # 最多 10 个 worker
+
+  # 扩缩容指标
+  metrics:
+    # 基于 CPU 使用率
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70 # CPU 超过 70% 时扩容
+
+    # 基于内存使用率
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80 # 内存超过 80% 时扩容
+
+  # 扩缩容行为控制
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300 # 5分钟稳定期
+      policies:
+        - type: Percent
+          value: 50 # 每次最多缩容 50%
+          periodSeconds: 60 # 每分钟
+    scaleUp:
+      stabilizationWindowSeconds: 60 # 1分钟稳定期
+      policies:
+        - type: Percent
+          value: 100 # 每次最多扩容 100%（翻倍）
+          periodSeconds: 30 # 每 30 秒
+        - type: Pods
+          value: 2 # 每次最多增加 2 个 pod
+          periodSeconds: 30
+
+---
+# 可选：基于自定义指标（Redis 队列长度）扩缩容
+# 需要安装 Prometheus 和 KEDA
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: pdf-processor-worker-scaler
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: pdf-processor-worker
+
+  minReplicaCount: 2
+  maxReplicaCount: 20
+
+  triggers:
+    # 基于 Redis 队列长度
+    - type: redis
+      metadata:
+        address: redis-service:6379
+        listName: queue:upload_tasks
+        listLength: "5" # 队列超过 5 个任务时扩容
+        activationListLength: "1" # 至少 1 个任务才激活

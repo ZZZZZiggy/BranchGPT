@@ -1,35 +1,74 @@
 package main
 
 import (
+	"go_chat_backend/bootstrap"
+	"go_chat_backend/config"
+	"go_chat_backend/middleware"
+	"go_chat_backend/pkg/logging"
+	"go_chat_backend/routes"
+	"os"
+	"os/signal"
+	"syscall"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
-	"go_chat_backend/routes"
-	"go_chat_backend/services"
-	"log"
-	"os"
 )
 
 func main() {
-	// 环境变量
-	err := godotenv.Load()
+	logging.Init()
+	// env
+	_ = godotenv.Load()
+	cfg := config.LoadConfig()
+
+	// initiate bucket
+	app, err := bootstrap.NewApp(cfg)
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		logging.Logger.Error("fail to create app", "error", err)
+		return
 	}
-	app := fiber.New()
+	defer func(app *bootstrap.App) {
+		err := app.Shutdown()
+		if err != nil {
+			logging.Logger.Error("fail to shutdown app", "error", err)
+		}
+	}(app)
 
-	if err := services.InitRedis(); err != nil {
-		log.Fatal(err)
-	}
-	if err = services.InitPostgres(); err != nil {
-		log.Fatal(err)
-	}
-	routes.RegisterDocumentRoutes(app)
-	routes.RegisterUserRoutes(app)
+	// https server
+	httpServer := fiber.New(fiber.Config{
+		AppName: "CogniCore API",
+	})
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "3000"
+	// middleware
+	httpServer.Use(middleware.Logger())
+	httpServer.Use(middleware.CORS())
+	routes.RegisterHealthRoutes(httpServer)
+	routes.RegisterDocumentRoutes(httpServer, app.Handlers.DocHandler)
+	routes.SetupWebSocketRoutes(httpServer, app.Handlers.WSHandler)
+	routes.RegisterChatRoutes(httpServer, app.Handlers.ChatHandler)
+
+	go func() {
+		if err := httpServer.Listen(":" + cfg.HttpPort); err != nil {
+			logging.Logger.Error("fail to listen", "error", err)
+		}
+	}()
+	logging.Logger.Info("Application started",
+		"http_port", cfg.HttpPort,
+		"grpc_port", cfg.GoGrpcIngestPort,
+	)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	logging.Logger.Info("Shutting down...")
+	err = httpServer.Shutdown()
+	if err != nil {
+		logging.Logger.Error("fail to shutdown http server", "error", err)
+		return
 	}
-	log.Println("Server running on http://localhost:" + port)
-	log.Fatal(app.Listen(":" + port))
+	err = app.Shutdown()
+	if err != nil {
+		logging.Logger.Error("fail to shutdown app", "error", err)
+		return
+	}
+	logging.Logger.Info("✓ Shutdown complete")
 }

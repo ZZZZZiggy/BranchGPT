@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pdf-processor-config
+  namespace: default
+data:
+  # Redis 配置
+  redis_url: "redis://redis-service:6379"
+  redis_queue_name: "queue:upload_tasks"
+  redis_retry_queue_name: "queue:upload_tasks_retry"
+
+  # gRPC 配置
+  go_grpc_ingest_addr: "go-ingest-service:50051" # Go 服务地址
+  grpc_server_port: "50052" # Python gRPC server 端口
+
+  # 存储配置
+  bucket_endpoint: "minio-service:9000"
+  bucket_name: "pdf-uploads"
+  storage_type: "minio"
+
+  # Embedding 配置
+  embedding_model_name: "paraphrase-multilingual-MiniLM-L12-v2"
+  embedding_dimension: "384"
+
+  # 日志配置
+  log_level: "INFO"

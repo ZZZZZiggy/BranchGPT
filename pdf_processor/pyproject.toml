@@ -3,7 +3,7 @@ name = "pdf-processor"
 version = "0.1.0"
 description = "PDF → structured JSON service"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 license = { text = "MIT" }
 
 dependencies = [
@@ -11,4 +11,20 @@ dependencies = [
   "uvicorn[standard]>=0.30.0,<1.0.0",
   "pymupdf>=1.24.0,<2.0.0",
   "python-multipart>=0.0.9",
+  "grpcio>=1.66.0,<1.70.0",
+  "grpcio-tools>=1.66.0,<1.70.0",
+  "redis>=7.0.1",
+  "aioboto3>=15.5.0",
+  "aiohttp>=3.13.2",
+  "sentence-transformers>=5.1.2",
+  "openai>=1.0.0",
+  "google-generativeai>=0.3.0",
+  "python-dotenv>=1.0.0",
 ]
+
+[project.scripts]
+pdf-processor = "main:main"
+
+[tool.poetry.dependencies]
+uvicorn = "*"
+fastapi = "*"
