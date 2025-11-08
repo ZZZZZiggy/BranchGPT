@@ -1,139 +1,111 @@
 package handlers
 
 import (
-	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
+	"context"
+	"go_chat_backend/models"
+	"go_chat_backend/pkg/logging"
 	"go_chat_backend/services"
-	"sync"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 type DocHandler struct {
-	docService *services.StorageService
+	documentService  *services.DocumentService
+	grpcService      *services.GRPCService
+	llmConfigService *services.LLMConfigService
 }
 
-func NewDocHandler(docService *services.StorageService) *DocHandler {
-	return &DocHandler{docService: docService}
+func NewDocHandler(documentService *services.DocumentService, grpcService *services.GRPCService, llmConfigService *services.LLMConfigService) *DocHandler {
+	return &DocHandler{
+		documentService:  documentService,
+		grpcService:      grpcService,
+		llmConfigService: llmConfigService,
+	}
 }
 
 func (h *DocHandler) RequestUpload(c *fiber.Ctx) error {
-	var req struct {
-		FileName    string `json:"file_name"`
-		FileSize    int64  `json:"file_size"`
-		ContentType string `json:"content_type"`
-		UserID      string `json:"user_id"`
+	var req models.UploadReq
+	if err := c.BodyParser(&req); err != nil {
+		logging.Logger.Error("fail RequestUpload", err)
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
 	}
+	if req.FileName == "" {
+		return c.Status(400).JSON(fiber.Map{
+			"error": "file_name is required",
+		})
+	}
+	if req.UserID == "" {
+		return c.Status(400).JSON(fiber.Map{
+			"error": "user_id is required",
+		})
+	}
+	res, err := h.documentService.RequestUpload(c.Context(), req)
+	if err != nil {
+		logging.Logger.Error("fail RequestUpload", "error", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to request upload", "details": err.Error()})
+	}
+
+	// return to frontend
+	return c.JSON(res)
+}
+
+func (h *DocHandler) ConfirmUpload(c *fiber.Ctx) error {
+	var req models.ConfirmUploadReq
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
-	if req.FileSize > 50*1024*1024 {
-		return c.Status(400).JSON(fiber.Map{"error": "File too large"})
-	}
+	ctx := context.Background()
 
-	if req.ContentType != "application/pdf" {
-		return c.Status(400).JSON(fiber.Map{"error": "Only PDF files allowed"})
-	}
-
-	res, err := h.docService.GeneratePresignedPostUpload(
-		req.FileName, req.FileSize)
+	// 获取文档信息以获取 userID
+	docInfo, err := h.documentService.GetDocumentByID(ctx, req.DocId)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to generate presigned URL"})
+		logging.Logger.Error("fail to get document info", "error", err, "docID", req.DocId)
+		return c.Status(404).JSON(fiber.Map{"error": "Document not found"})
+	}
+
+	// 保存用户的 LLM 配置到缓存（30分钟有效期）
+	if req.ApiKey != "" && req.Model != "" && req.Provider != "" {
+		llmConfig := &services.LLMConfig{
+			APIKey:   req.ApiKey,
+			Model:    req.Model,
+			Provider: req.Provider,
+			UserID:   docInfo.UserID,
+		}
+		if err := h.llmConfigService.SetUserLLMConfig(ctx, docInfo.UserID, llmConfig); err != nil {
+			logging.Logger.Error("fail to save LLM config", "error", err, "userID", docInfo.UserID)
+			// 不阻塞流程，只记录错误
+		} else {
+			logging.Logger.Info("LLM config saved",
+				"userID", docInfo.UserID,
+				"provider", req.Provider,
+				"model", req.Model,
+				"apiKey", services.MaskAPIKey(req.ApiKey),
+			)
+		}
+	}
+
+	taskID := req.DocId
+	if err := h.grpcService.SendAPIKey(ctx, taskID, req.ApiKey, req.Provider); err != nil {
+		logging.Logger.Error("fail to send API key in background", "error", err, "taskID", taskID)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to send API key in background"})
+	}
+	logging.Logger.Info("successfully sent API key in background", "taskID", taskID)
+
+	res, err := h.documentService.ConfirmUpload(c.Context(), req)
+	if err != nil {
+		logging.Logger.Error("fail ConfirmUpload", "error", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to confirm upload"})
 	}
 	return c.JSON(res)
 }
-func ProcessPDF(c *fiber.Ctx) error {
-	docID := uuid.New().String()
-	// get FormFile from fiber
-	fileHandler, err := c.FormFile("file")
-	model := c.FormValue("model", "Gemini")
-	modelVision := c.FormValue("model_vision")
+
+func (h *DocHandler) GetToc(c *fiber.Ctx) error {
+	docID := c.Params("doc_id")
+	res, err := h.documentService.GetSections(c.Context(), docID)
 	if err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, "File required")
+		logging.Logger.Error("fail GetToc", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to get TOC"})
 	}
-
-	// python api
-	ProcessedFile, err := services.CallPythonAPI(fileHandler, docID)
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-	}
-
-	// sync save redis and postgres
-	var wg sync.WaitGroup
-	errChan := make(chan error, 2)
-	q1Chan := make(chan map[string]string, 1)
-	sectionChan := make(chan []string, 1)
-	// save to redis
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		sections, err := services.SaveToRedis(ProcessedFile, docID)
-		if err != nil {
-			errChan <- err
-		}
-		sectionChan <- sections
-	}()
-
-	// call llm for first message
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		msg := "Please summarize the main content of this paper and its research category"
-		prompt, err := services.FilePrompt(msg, ProcessedFile)
-		if err != nil {
-			errChan <- err
-			return
-		}
-
-		answer, err := services.CallLLM(prompt, model, modelVision)
-		if err != nil {
-			errChan <- err
-			return
-		}
-		nodeID, _, err := services.SaveChatNode(msg, answer, docID, "", "")
-		if err != nil {
-			errChan <- err
-			return
-		}
-		q1Chan <- map[string]string{
-			"answer":  answer,
-			"node_id": nodeID,
-		}
-	}()
-	wg.Wait()
-	close(errChan)
-	close(q1Chan)
-	close(sectionChan)
-	for err := range errChan {
-		if err != nil {
-			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-		}
-	}
-	// get Q1 answer
-	var q1answer string
-	var q1nodeID string
-	var sections []string
-	if q1, ok := <-q1Chan; ok {
-		q1answer = q1["answer"]
-		q1nodeID = q1["node_id"]
-	}
-	if s, ok := <-sectionChan; ok {
-		sections = s
-	}
-	// save to postgres
-	docMeta, err := services.SaveToPostgres(ProcessedFile, docID, q1nodeID)
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
-
-	}
-	return c.JSON(fiber.Map{
-		"message":    "PDF processed successfully",
-		"doc_id":     docID,
-		"title":      docMeta.Title,
-		"status":     "processed",
-		"created_at": docMeta.CreatedAt,
-		"q1_answer":  q1answer,
-		"q1_node_id": q1nodeID,
-		"sections":   sections,
-	})
-
+	return c.JSON(res)
 }

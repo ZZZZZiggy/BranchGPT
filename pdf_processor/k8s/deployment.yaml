@@ -1,0 +1,169 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pdf-processor-worker
+  namespace: default
+  labels:
+    app: pdf-processor
+    component: worker
+spec:
+  # 🔥 并发控制：通过 replicas 数量控制 worker 并发
+  replicas: 3 # 3个 worker 同时处理任务
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1 # 更新时最多增加1个pod
+      maxUnavailable: 1 # 更新时最多1个pod不可用
+
+  selector:
+    matchLabels:
+      app: pdf-processor
+      component: worker
+
+  template:
+    metadata:
+      labels:
+        app: pdf-processor
+        component: worker
+    spec:
+      # 优雅退出时间
+      terminationGracePeriodSeconds: 60
+
+      containers:
+        - name: worker
+          image: your-registry/pdf-processor:latest
+          imagePullPolicy: IfNotPresent
+
+          # 启动命令
+          command: ["python", "-m", "tasks.redis_worker"]
+
+          # 资源限制
+          resources:
+            requests:
+              cpu: "500m" # 0.5 核心
+              memory: "1Gi" # 1GB 内存
+            limits:
+              cpu: "2000m" # 最多 2 核心
+              memory: "4Gi" # 最多 4GB 内存
+
+          # 环境变量（从 ConfigMap 和 Secret 读取）
+          env:
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: pdf-processor-config
+                  key: redis_url
+
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pdf-processor-secrets
+                  key: redis_password
+                  optional: true
+
+            - name: REDIS_QUEUE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: pdf-processor-config
+                  key: redis_queue_name
+
+            - name: GO_GRPC_INGEST_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: pdf-processor-config
+                  key: go_grpc_ingest_addr
+
+            - name: GRPC_SERVER_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: pdf-processor-config
+                  key: grpc_server_port
+
+            - name: BUCKET_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: pdf-processor-config
+                  key: bucket_endpoint
+
+            - name: BUCKET_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: pdf-processor-config
+                  key: bucket_name
+
+            - name: BUCKET_ACCESS_ID
+              valueFrom:
+                secretKeyRef:
+                  name: pdf-processor-secrets
+                  key: bucket_access_id
+
+            - name: BUCKET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pdf-processor-secrets
+                  key: bucket_access_key
+
+            - name: LOG_LEVEL
+              value: "INFO"
+
+          # gRPC 端口暴露
+          ports:
+            - name: grpc-apikey
+              containerPort: 50052
+              protocol: TCP
+
+          # 健康检查
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import redis; redis.from_url('$(REDIS_URL)').ping()"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import redis; redis.from_url('$(REDIS_URL)').ping()"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # 挂载临时目录
+          volumeMounts:
+            - name: temp-storage
+              mountPath: /tmp/pdf_processor
+
+      volumes:
+        - name: temp-storage
+          emptyDir:
+            sizeLimit: 10Gi # 临时存储最多 10GB
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pdf-processor-worker
+  namespace: default
+  labels:
+    app: pdf-processor
+    component: worker
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc-apikey
+      port: 50052
+      targetPort: 50052
+      protocol: TCP
+  selector:
+    app: pdf-processor
+    component: worker
+  # 使用 Headless Service，Go 可以直接访问所有 Pod
+  clusterIP: None
