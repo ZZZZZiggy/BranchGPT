@@ -13,7 +13,17 @@ def get_local_embedding_model():
             from sentence_transformers import SentenceTransformer
             model_name = getattr(config, 'EMBEDDING_MODEL_NAME', 'paraphrase-multilingual-MiniLM-L12-v2')
             logger.info(f"Loading local embedding model: {model_name}")
-            _embedding_model = SentenceTransformer(model_name)
+
+            # 优化加载速度的配置
+            _embedding_model = SentenceTransformer(
+                model_name,
+                device='cpu',  # 明确指定设备，避免自动检测开销
+                cache_folder=None,  # 使用默认缓存路径
+            )
+
+            # 设置推理优化
+            _embedding_model.eval()  # 设置为评估模式
+
             logger.info(f"✓ Model loaded successfully")
         except ImportError:
             error_msg = "sentence-transformers not installed. Install with: pip install sentence-transformers"

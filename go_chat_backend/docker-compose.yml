@@ -18,6 +18,8 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+    networks:
+      - go_chat_network
 
   # MinIO 初始化 - 自动创建 bucket
   minio-init:
@@ -30,7 +32,7 @@ services:
       echo '等待 MinIO 启动...';
       sleep 10;
       echo '配置 MinIO 客户端...';
-      /usr/bin/mc config host add myminio http://minio:9000 minioadmin minioadmin123;
+      /usr/bin/mc config host add myminio http://minio:9000 minioadmin minioadmin;
       echo '创建 documents bucket...';
       /usr/bin/mc mb myminio/documents --ignore-existing;
       echo '设置 bucket 访问权限...';
@@ -38,6 +40,8 @@ services:
       echo 'MinIO 初始化完成！';
       exit 0;
       "
+    networks:
+      - go_chat_network
 
 
   # PostgreSQL 数据库
@@ -91,7 +95,7 @@ services:
       STORAGE_TYPE: "minio"
       BUCKET_ENDPOINT: "minio:9000"
       BUCKET_ACCESS_ID: "minioadmin"
-      BUCKET_ACCESS_KEY: "minioadmin123"
+      BUCKET_ACCESS_KEY: "minioadmin"
       BUCKET_NAME: "documents"
       BUCKET_REGION: "us-east-1"
       BUCKET_USE_SSL: "false"

@@ -20,6 +20,17 @@ async def main():
     logger.info("🚀 Starting PDF Processor Service")
     logger.info("=" * 60)
 
+    # 预热 embedding 模型（避免首次请求时冷启动）
+    logger.info("🔥 Warming up embedding model...")
+    try:
+        from infra.document_infra.embedding import get_local_embedding_model
+        model = get_local_embedding_model()
+        # 运行一次测试推理确保模型完全加载
+        _ = model.encode("warmup test", show_progress_bar=False)
+        logger.info("✓ Embedding model warmed up and ready")
+    except Exception as e:
+        logger.warning(f"⚠️  Model warmup failed (will load on first use): {e}")
+
     # Start gRPC servers (they run in background threads)
     logger.info("Starting gRPC servers...")
     embedding_server = start_embedding_grpc_server()  # Port 50053: Embedding service
