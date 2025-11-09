@@ -6,7 +6,6 @@ import (
 	"go_chat_backend/models"
 	"go_chat_backend/pkg/logging"
 	"go_chat_backend/platform/cache"
-	"go_chat_backend/platform/database"
 	"go_chat_backend/repository"
 	"time"
 
@@ -19,15 +18,24 @@ type ChatService struct {
 	cacheService     cache.CacheService
 	llmService       *LLMService
 	llmConfigService *LLMConfigService
+	ragService       *RagModeService
 }
 
-func NewChatService(db *database.DB, cacheService cache.CacheService, llmService *LLMService, llmConfigService *LLMConfigService) *ChatService {
+func NewChatService(
+	chatRepo repository.ChatRepository,
+	docRepo repository.DocumentRepository,
+	cacheService cache.CacheService,
+	llmService *LLMService,
+	llmConfigService *LLMConfigService,
+	ragService *RagModeService,
+) *ChatService {
 	return &ChatService{
-		chatRepo:         repository.NewChatRepository(db.GetDatabase()),
-		docRepo:          repository.NewDocumentRepository(db.GetDatabase()),
+		chatRepo:         chatRepo,
+		docRepo:          docRepo,
 		cacheService:     cacheService,
 		llmService:       llmService,
 		llmConfigService: llmConfigService,
+		ragService:       ragService,
 	}
 }
 
@@ -100,8 +108,13 @@ func (s *ChatService) AskQuestion(ctx context.Context, fileID string, req models
 		"model", llmConfig.Model,
 		"apiKey", MaskAPIKey(llmConfig.APIKey),
 	)
+	ragMode, err := s.ragService.GetRagMode(ctx, fileID)
+	if err != nil {
+		logging.Logger.Error("fail to get RAG mode", "error", err, "fileID", fileID)
+		ragMode = false
+	}
 
-	prompt := s.llmService.BuildPrompt(ChatHistory, req.Question, req.Section, req.FileID, llmConfig.Provider, llmConfig.Model)
+	prompt := s.llmService.BuildPrompt(ChatHistory, req.Question, req.Section, req.FileID, llmConfig.Provider, llmConfig.Model, ragMode)
 	answer, err := s.llmService.CallLLM(prompt, llmConfig.Provider, llmConfig.Model, llmConfig.APIKey)
 	if err != nil {
 		logging.Logger.Error("fail AskQuestion", "error", err)

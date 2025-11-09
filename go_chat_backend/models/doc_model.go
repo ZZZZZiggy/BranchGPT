@@ -14,6 +14,7 @@ type EtlTask struct {
 	UserID    string
 	CreatedAt time.Time
 	URL       string
+	RagMode   string
 }
 
 type DocumentMeta struct {
@@ -21,17 +22,20 @@ type DocumentMeta struct {
 	FileID string `gorm:"column:file_id;type:varchar(255);primaryKey" json:"file_id"`
 
 	// 基本信息字段
-	UserID          string    `gorm:"column:user_id;type:varchar(255);not null;index:idx_user_id" json:"user_id"`
-	URL             string    `gorm:"column:url;type:text;not null" json:"url"`
-	Filename        string    `gorm:"column:filename;type:varchar(512);not null" json:"filename"`
-	TotalPages      int32     `gorm:"column:total_pages;type:int" json:"total_pages"`
-	EstimatedChunks int32     `gorm:"column:estimated_chunks;type:int" json:"estimated_chunks"`
-	FileHash        string    `gorm:"column:file_hash;type:varchar(64);uniqueIndex:idx_file_hash" json:"file_hash"`
-	FileSize        int64     `gorm:"column:file_size;type:bigint" json:"file_size"`
+	UserID          string         `gorm:"column:user_id;type:varchar(255);not null;index:idx_user_id" json:"user_id"`
+	URL             string         `gorm:"column:url;type:text;not null" json:"url"`
+	Filename        string         `gorm:"column:filename;type:varchar(512);not null" json:"filename"`
+	TotalPages      int32          `gorm:"column:total_pages;type:int" json:"total_pages"`
+	EstimatedChunks int32          `gorm:"column:estimated_chunks;type:int" json:"estimated_chunks"`
+	FileHash        string         `gorm:"column:file_hash;type:varchar(64);uniqueIndex:idx_file_hash" json:"file_hash"`
+	FileSize        int64          `gorm:"column:file_size;type:bigint" json:"file_size"`
 	CreatedAt       time.Time      `gorm:"column:created_at;type:timestamp" json:"created_at"`
 	FileKey         string         `gorm:"column:file_key;type:varchar(255);not null;index:idx_file_key" json:"file_key"`
 	Root            string         `gorm:"column:root;type:varchar(255);index:idx_root" json:"root"`
 	Sections        pq.StringArray `gorm:"column:sections;type:text[]" json:"sections"`
+
+	// RAG 配置字段
+	RagMode bool `gorm:"column:rag_mode;type:boolean;default:false" json:"rag_mode"`
 
 	// 状态追踪字段
 	Status         string `gorm:"column:status;type:varchar(50);default:'processing';index:idx_status" json:"status"`

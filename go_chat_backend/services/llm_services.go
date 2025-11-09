@@ -21,7 +21,7 @@ func NewLLMService(chunkRepository repository.ChunkRepository, grpcService *GRPC
 		GRPCService:     grpcService,
 	}
 }
-func (s *LLMService) BuildPrompt(history []*models.ChatNode, question, section, fileID, provider, apikey string) string {
+func (s *LLMService) BuildPrompt(history []*models.ChatNode, question, section, fileID, provider, apikey string, ragMode bool) string {
 	// assume
 	var builder strings.Builder
 	builder.WriteString("You are an AI assistant helping the user understand a technical document.\n\n")
@@ -34,17 +34,19 @@ func (s *LLMService) BuildPrompt(history []*models.ChatNode, question, section, 
 		}
 		builder.WriteString(fmt.Sprintf("The following questions are about Section %s:\n%s\n\n", section, chunkContext.ChunkText))
 	}
-
-	embedding, err := s.GRPCService.GetEmbedding(question, apikey, provider)
-	if err != nil {
-		logging.Logger.Error("fail GetEmbedding", "error", err)
-	} else {
+	if ragMode {
+		embedding, err := s.GRPCService.GetEmbedding(question)
+		if err != nil {
+			logging.Logger.Error("fail GetEmbedding", err)
+		}
 		similar, err := s.chunkRepository.SearchSimilar(context.Background(), embedding, 1)
 		if err != nil {
-			logging.Logger.Error("fail SearchSimilar", "error", err)
-		} else if len(similar) > 0 {
-			builder.WriteString(fmt.Sprintf("The following context is similar to the question:\n%s\n\n", similar[0].ChunkText))
+			logging.Logger.Error("fail SearchSimilar", err)
 		}
+		if len(similar) == 0 {
+			logging.Logger.Error("fail SearchSimilar", "similar", similar)
+		}
+		builder.WriteString(fmt.Sprintf("The following context are similar to the question:\n%s\n\n", similar[0].ChunkText))
 	}
 
 	if len(history) == 0 {

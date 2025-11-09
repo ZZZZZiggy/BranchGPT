@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package cognicore;
 
+option go_package = "github.com/ZZZiggy_/go_chat_backend/platform/proto/cognicore";
+
 // ==================== 数据结构 ====================
 
 // 文本块（你发送给 Go 的数据）
@@ -54,31 +56,20 @@ message IngestResponse {
   string file_id = 8;
 }
 
-
-message APIKeyRequest {
-  string task_id = 1;  // 任务 ID（用于匹配）
-  string api_key = 2;  // API Key (OpenAI, Gemini, etc.)
-  string provider = 3; // Provider name: "openai" or "gemini"
-}
-
-message APIKeyResponse {
-  bool success = 1;
-  string message = 2;
-}
-
+// Embedding 请求（Go 调用 Python 时使用）
 message EmbeddingRequest {
   string task_id = 1;      // 任务 ID（用于日志追踪）
   string text = 2;         // 要向量化的文本
-  string api_key = 3;      // API Key (OpenAI, Gemini, etc.)
-  string provider = 4;     // Provider name: "openai" or "gemini"
 }
 
+// Embedding 响应
 message EmbeddingResponse {
   bool success = 1;
   string message = 2;
   repeated float embeddings = 3;  // 向量结果（float 数组）
   int32 dimension = 4;            // 向量维度
 }
+
 // ==================== 服务定义 ====================
 
 // 数据导入服务
@@ -94,12 +85,6 @@ service IngestService {
   // Unary 模式：单个 chunk 上传
   // 使用场景：重试失败的 chunk，或者测试单个 chunk
   rpc IngestSingleChunk(TextChunk) returns (IngestResponse);
-}
-
-// API Key 传递
-service APIKeyService {
-  // Go 调用 Python：传递 API Key
-  rpc ProvideAPIKey(APIKeyRequest) returns (APIKeyResponse);
 }
 
 // Embedding 服务

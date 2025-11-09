@@ -31,10 +31,10 @@ test:
 proto:
 	@echo "📦 生成 gRPC 代码..."
 	@.venv/bin/python -m grpc_tools.protoc \
-		-I./protos \
-		--python_out=./protos \
-		--grpc_python_out=./protos \
-		./protos/cognicore.proto
+		-I./infra/grpc_infra/protos \
+		--python_out=./infra/grpc_infra/protos \
+		--grpc_python_out=./infra/grpc_infra/protos \
+		./infra/grpc_infra/protos/cognicore.proto
 	@echo "✅ gRPC 代码生成完成"
 
 # 启动 Redis

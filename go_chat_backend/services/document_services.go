@@ -21,6 +21,7 @@ type DocumentService struct {
 	cacheService        cache.CacheService
 	llmService          LLMService
 	llmConfigService    *LLMConfigService
+	ragService          *RagModeService
 }
 
 func NewDocumentService(
@@ -29,7 +30,8 @@ func NewDocumentService(
 	messageQueueService cache.MessageQueue,
 	storageService *storage.Service,
 	cacheService cache.CacheService,
-	llmConfigService *LLMConfigService) *DocumentService {
+	llmConfigService *LLMConfigService,
+	ragService *RagModeService) *DocumentService {
 	return &DocumentService{
 		docRepo:             docRepo,
 		chatRepo:            chatRepo,
@@ -37,6 +39,7 @@ func NewDocumentService(
 		storageService:      storageService,
 		cacheService:        cacheService,
 		llmConfigService:    llmConfigService,
+		ragService:          ragService,
 	}
 }
 
@@ -90,6 +93,12 @@ func (s *DocumentService) RequestUpload(ctx context.Context, req models.UploadRe
 }
 
 func (s *DocumentService) ConfirmUpload(ctx context.Context, req models.ConfirmUploadReq) (*models.ConfirmUploadResp, error) {
+	reqMode := req.RagMode == "true"
+	go func() {
+		if err := s.ragService.SetRagMode(ctx, req.DocId, reqMode); err != nil {
+			logging.Logger.Error("fail to set RAG mode", "error", err, "docID", req.DocId)
+		}
+	}()
 	info, err := s.docRepo.GetByID(ctx, req.DocId)
 	if err != nil {
 		logging.Logger.Error("fail GetBaseInfo", err)
@@ -113,6 +122,7 @@ func (s *DocumentService) ConfirmUpload(ctx context.Context, req models.ConfirmU
 		URL:       info.URL,
 		UserID:    info.UserID,
 		CreatedAt: time.Now(),
+		RagMode:   req.RagMode,
 	}
 	if err = s.messageQueueService.PushToQueue("upload_tasks", etlTask); err != nil {
 		logging.Logger.Error("fail PushToQueue", err)

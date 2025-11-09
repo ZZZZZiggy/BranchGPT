@@ -2,8 +2,8 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"go_chat_backend/models"
+	"go_chat_backend/pkg/logging"
 	"go_chat_backend/platform/database"
 	"go_chat_backend/platform/proto/cognicore"
 	"go_chat_backend/repository"
@@ -73,7 +73,6 @@ func (cs *ChunkService) GetSections(fileID string) []string {
 	if ctx, exists := cs.docContexts[fileID]; exists {
 		ctx.mu.Lock()
 		defer ctx.mu.Unlock()
-		// 返回副本，避免外部修改
 		sections := make([]string, len(ctx.Sections))
 		copy(sections, ctx.Sections)
 		return sections
@@ -110,12 +109,12 @@ func (cs *ChunkService) ProcessDocumentMetadata(metadata *cognicore.DocumentMeta
 func (cs *ChunkService) ProcessChunk(chunk *cognicore.TextChunk) error {
 	ctx := context.Background()
 
-	// 🔍 DEBUG: Check embedding vector length
+	//  DEBUG: Check embedding vector length
 	if len(chunk.EmbeddingVector) == 0 {
-		return fmt.Errorf("❌ chunk %d: embedding vector is EMPTY (length=0)", chunk.ChunkIndex)
+		logging.Logger.Error("chunk %d: embedding vector is EMPTY (length=0)", chunk.ChunkIndex)
 	}
 
-	// ✅ Clean text to remove NULL bytes (PostgreSQL doesn't allow \x00 in UTF-8)
+	// Clean text to remove NULL bytes (PostgreSQL doesn't allow \x00 in UTF-8)
 	cleanedChapter := strings.ReplaceAll(chunk.Chapter, "\x00", "")
 	cleanedText := strings.ReplaceAll(chunk.ChunkText, "\x00", "")
 

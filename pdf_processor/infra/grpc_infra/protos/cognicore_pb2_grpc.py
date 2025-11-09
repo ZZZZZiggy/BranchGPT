@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import cognicore_pb2 as cognicore__pb2
+from infra.grpc_infra.protos import cognicore_pb2 as cognicore__pb2
 
 GRPC_GENERATED_VERSION = '1.69.0'
 GRPC_VERSION = grpc.__version__
@@ -26,7 +26,9 @@ if _version_not_supported:
 
 
 class IngestServiceStub(object):
-    """数据导入服务
+    """==================== 服务定义 ====================
+
+    数据导入服务
     角色分配：
     - Go：服务端（Server），实现这个服务，监听端口，等待 Python 连接
     - Python：客户端（Client），连接 Go，调用这个服务，发送数据
@@ -52,7 +54,9 @@ class IngestServiceStub(object):
 
 
 class IngestServiceServicer(object):
-    """数据导入服务
+    """==================== 服务定义 ====================
+
+    数据导入服务
     角色分配：
     - Go：服务端（Server），实现这个服务，监听端口，等待 Python 连接
     - Python：客户端（Client），连接 Go，调用这个服务，发送数据
@@ -97,7 +101,9 @@ def add_IngestServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class IngestService(object):
-    """数据导入服务
+    """==================== 服务定义 ====================
+
+    数据导入服务
     角色分配：
     - Go：服务端（Server），实现这个服务，监听端口，等待 Python 连接
     - Python：客户端（Client），连接 Go，调用这个服务，发送数据
@@ -148,82 +154,6 @@ class IngestService(object):
             '/cognicore.IngestService/IngestSingleChunk',
             cognicore__pb2.TextChunk.SerializeToString,
             cognicore__pb2.IngestResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-
-class APIKeyServiceStub(object):
-    """API Key 传递
-    """
-
-    def __init__(self, channel):
-        """Constructor.
-
-        Args:
-            channel: A grpc.Channel.
-        """
-        self.ProvideAPIKey = channel.unary_unary(
-                '/cognicore.APIKeyService/ProvideAPIKey',
-                request_serializer=cognicore__pb2.APIKeyRequest.SerializeToString,
-                response_deserializer=cognicore__pb2.APIKeyResponse.FromString,
-                _registered_method=True)
-
-
-class APIKeyServiceServicer(object):
-    """API Key 传递
-    """
-
-    def ProvideAPIKey(self, request, context):
-        """Go 调用 Python：传递 API Key
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-
-def add_APIKeyServiceServicer_to_server(servicer, server):
-    rpc_method_handlers = {
-            'ProvideAPIKey': grpc.unary_unary_rpc_method_handler(
-                    servicer.ProvideAPIKey,
-                    request_deserializer=cognicore__pb2.APIKeyRequest.FromString,
-                    response_serializer=cognicore__pb2.APIKeyResponse.SerializeToString,
-            ),
-    }
-    generic_handler = grpc.method_handlers_generic_handler(
-            'cognicore.APIKeyService', rpc_method_handlers)
-    server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('cognicore.APIKeyService', rpc_method_handlers)
-
-
- # This class is part of an EXPERIMENTAL API.
-class APIKeyService(object):
-    """API Key 传递
-    """
-
-    @staticmethod
-    def ProvideAPIKey(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/cognicore.APIKeyService/ProvideAPIKey',
-            cognicore__pb2.APIKeyRequest.SerializeToString,
-            cognicore__pb2.APIKeyResponse.FromString,
             options,
             channel_credentials,
             insecure,

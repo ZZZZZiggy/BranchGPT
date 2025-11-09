@@ -1,6 +1,9 @@
 import config
 from pathlib import Path
-from asyncio.log import logger
+from utils import get_logger
+import traceback
+
+logger = get_logger(__name__)
 
 async def download_from_bucket(download_url: str, local_path: Path):
     """Download a file from the given URL to the specified local path."""
@@ -32,4 +35,5 @@ async def download_from_bucket(download_url: str, local_path: Path):
                             await f.write(chunk)
     except Exception as e:
         logger.error(f"Error downloading file from {download_url}: {e}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
         raise RuntimeError(f"Failed to download file from {download_url}: {e}")

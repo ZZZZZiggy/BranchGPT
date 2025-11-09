@@ -19,7 +19,7 @@ type ChatTreeNode struct {
 }
 type ChatReq struct {
 	FileID    string
-	UserID    string    // 用户 ID，用于获取 LLM 配置
+	UserID    string // 用户 ID，用于获取 LLM 配置
 	Question  string
 	Section   string
 	ParentID  string

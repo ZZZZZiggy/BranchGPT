@@ -1,19 +1,21 @@
-from asyncio.log import logger
+from utils import get_logger
 import config
+import traceback
 
+logger = get_logger(__name__)
+import traceback
 import redis.asyncio as redis
 import json
 import asyncio
 from typing import Optional, Tuple
 from pathlib import Path
 from datetime import datetime
-from etl.file_downloader import download_from_bucket
-from etl.processing import process_and_vectorize
-from services.ingest_client import stream_to_go_service
-from tasks.grpc_api_key import wait_for_api_key
+from infra.bucket_infra.file_downloader import download_from_bucket
+from infra.document_infra.processing import process_and_vectorize
+from app.doc_streamer import stream_to_go_service
 
 
-async def process_data(task_data: dict, redis_client: redis.Redis) -> dict:
+async def process_data(task_data: dict, redis_client: redis.Redis, rag_mode: bool) -> dict:
     """Process the task data received from Redis.
     This function downloads the file, processes it, and streams the results to the Go service.
     Implements automatic retry on failure with exponential backoff.
@@ -21,13 +23,9 @@ async def process_data(task_data: dict, redis_client: redis.Redis) -> dict:
     doc_id = task_data.get("DocID")
     retry_count = task_data.get("retry_count", 0)
     max_retries = 3
-    task_id = task_data.get("task_id", doc_id)
 
     try:
-        logger.info(f"Waiting for API Key for task {task_id}...")
-        api_key, provider = await wait_for_api_key(task_id, timeout=30) # type: ignore
-        logger.info(f"✓ API Key received for task {task_id} (provider: {provider})")
-
+        logger.info(f"Processing document {doc_id} with local embedding model...")
 
         file_name = task_data.get("FileName")
         user_id = task_data.get("UserID")
@@ -77,12 +75,18 @@ async def process_data(task_data: dict, redis_client: redis.Redis) -> dict:
             await download_from_bucket(download_url, local_file_path)  # type: ignore
             logger.info(f" File downloaded to {local_file_path}")
         except Exception as e:
+            error_msg = f"Failed to download file from {download_url}"
             logger.error(f" Download failed: {e}")
-            raise Exception(f"Failed to download file from {download_url}: {e}")
+            logger.error(f"Traceback:\n{traceback.format_exc()}")
+            raise Exception(f"{error_msg}: {e}")
 
         # Step 2: Process and vectorize the document
         logger.info(f" - processing and vectorizing document {doc_id}...")
-        data_generator, estimated_chunks = process_and_vectorize(local_file_path, file_id=doc_id, api_key="", provider="provider") # type: ignore
+        data_generator, estimated_chunks = process_and_vectorize(
+            str(local_file_path),
+            file_id=doc_id,
+            rag_mode=rag_mode
+        ) # type: ignore
 
         logger.info(f" - document {doc_id} processed and vectorized.")
 
@@ -156,6 +160,7 @@ async def process_data(task_data: dict, redis_client: redis.Redis) -> dict:
 
     except Exception as e:
         logger.error(f"Exception processing document {doc_id}: {e}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
 
         # Exception - also consider retry
         if retry_count < max_retries:
@@ -236,14 +241,16 @@ async def redis_main_loop():
                     f" Processing document {doc_id} "
                     f"(retry: {retry_count})"
                 )
-
+                rag_mode = task_data.get("RagMode", False)
                 # Process with retry support
-                await process_data(task_data, redis_client)
+                await process_data(task_data, redis_client, rag_mode)
 
         except json.JSONDecodeError as e:
             logger.error(f" Error decoding JSON: {e}")
+            logger.error(f"Traceback:\n{traceback.format_exc()}")
         except Exception as e:
             logger.error(f" Unexpected error in main loop: {e}")
+            logger.error(f"Traceback:\n{traceback.format_exc()}")
 
 if __name__ == '__main__':
     asyncio.run(redis_main_loop())
