@@ -1,0 +1,104 @@
+# AWS 生产环境 Docker Compose 配置
+# 使用方式: docker-compose -f docker-compose.aws.yml up -d
+
+services:
+  # Go 后端服务
+  go_chat_backend:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cognicore-backend:latest
+    container_name: go_chat_backend
+    ports:
+      - "3000:3000"
+      - "50051:50051" # gRPC 接收端口
+    environment:
+      PORT: "3000"
+
+      # AWS S3 配置（替代 MinIO）
+      STORAGE_TYPE: "s3"
+      BUCKET_ENDPOINT: "s3.${AWS_REGION}.amazonaws.com"
+      BUCKET_NAME: "${S3_BUCKET_NAME}"
+      BUCKET_REGION: "${AWS_REGION}"
+      BUCKET_USE_SSL: "true"
+      # AWS 凭证（如果在 EC2，可通过 IAM Role 自动获取，无需配置）
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+
+      # RDS PostgreSQL 配置
+      PG_HOST: "${RDS_ENDPOINT}"
+      PG_PORT: "5432"
+      PG_USER: "${RDS_USER}"
+      PG_PASSWORD: "${RDS_PASSWORD}"
+      PG_DB: "${RDS_DATABASE}"
+
+      # ElastiCache Redis 配置
+      REDIS_URL: "${REDIS_ENDPOINT}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+
+      # gRPC 配置（容器内通信）
+      GO_GRPC_INGEST_PORT: "50051"
+      GRPC_SERVER_ADDR: "0.0.0.0:50051"
+      GRPC_EMBEDDING_ADDR: "pdf_processor:50053" # 指向 Python 服务
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - aws_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Python PDF 处理服务
+  pdf_processor:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/cognicore-pdf-processor:latest
+    container_name: pdf_processor
+    ports:
+      - "50053:50053" # gRPC embedding 端口
+    environment:
+      # Redis 配置
+      REDIS_URL: "${REDIS_ENDPOINT}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+      REDIS_QUEUE_NAME: "queue:upload_tasks"
+
+      # AWS S3 配置
+      STORAGE_TYPE: "s3"
+      BUCKET_ENDPOINT: "s3.${AWS_REGION}.amazonaws.com"
+      BUCKET_NAME: "${S3_BUCKET_NAME}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+
+      # gRPC 配置
+      GO_GRPC_INGEST_ADDR: "go_chat_backend:50051" # 指向 Go 服务
+      GRPC_EMBEDDING_PORT: "50053"
+
+      # 模型配置
+      EMBEDDING_MODEL_NAME: "paraphrase-multilingual-MiniLM-L12-v2"
+      EMBEDDING_DIMENSION: "384"
+
+      LOG_LEVEL: "INFO"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c ''import redis; r=redis.Redis.from_url("${REDIS_ENDPOINT}", password="${REDIS_PASSWORD}"); r.ping()''',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - aws_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  aws_network:
+    driver: bridge

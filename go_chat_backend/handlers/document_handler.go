@@ -57,7 +57,6 @@ func (h *DocHandler) ConfirmUpload(c *fiber.Ctx) error {
 
 	ctx := context.Background()
 
-	// 获取文档信息以获取 userID
 	docInfo, err := h.documentService.GetDocumentByID(ctx, req.DocId)
 	if err != nil {
 		logging.Logger.Error("fail to get document info", "error", err, "docID", req.DocId)
@@ -74,7 +73,6 @@ func (h *DocHandler) ConfirmUpload(c *fiber.Ctx) error {
 		}
 		if err := h.llmConfigService.SetUserLLMConfig(ctx, docInfo.UserID, llmConfig); err != nil {
 			logging.Logger.Error("fail to save LLM config", "error", err, "userID", docInfo.UserID)
-			// 不阻塞流程，只记录错误
 		} else {
 			logging.Logger.Info("LLM config saved",
 				"userID", docInfo.UserID,
@@ -84,13 +82,6 @@ func (h *DocHandler) ConfirmUpload(c *fiber.Ctx) error {
 			)
 		}
 	}
-
-	taskID := req.DocId
-	if err := h.grpcService.SendAPIKey(ctx, taskID, req.ApiKey, req.Provider); err != nil {
-		logging.Logger.Error("fail to send API key in background", "error", err, "taskID", taskID)
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to send API key in background"})
-	}
-	logging.Logger.Info("successfully sent API key in background", "taskID", taskID)
 
 	res, err := h.documentService.ConfirmUpload(c.Context(), req)
 	if err != nil {

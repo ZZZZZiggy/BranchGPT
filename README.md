@@ -1,550 +1,1174 @@
-# 项目设计说明书："CogniCore" 智能 RAG 应用平台
+# CogniCore - 智能文档问答系统
 
-**项目代号**: CogniCore
-**版本**: 2.6 (gRPC 架构更新版)
-**日期**: 2025 年 11 月 04 日
-**文档状态**: 定稿
+<div align="center">
 
-## 1.0 项目愿景与核心原则
+**企业级 RAG (检索增强生成) 平台**
 
-### 1.1 项目愿景
+[![Go Version](https://img.shields.io/badge/Go-1.24-blue.svg)](https://golang.org/)
+[![Python Version](https://img.shields.io/badge/Python-3.11+-green.svg)](https://python.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-"CogniCore" 旨在构建一个极致性能、企业级的检索增强生成（RAG）平台。它不仅是一个聊天应用，更是一个可扩展的智能核心，能够集成各类文档知识库，为用户提供精准、有据依依、可追溯来源的智能问答服务。
+_基于文档知识库的智能对话系统，提供精准、可追溯的 AI 问答服务_
 
-### 1.2 核心设计原则
+</div>
 
-- **可扩展性 (Scalability)**: 架构必须能够平滑地从服务少量用户扩展到服务数百万用户，并能弹性应对突发流量。
-- **可靠性 (Reliability)**: 系统必须具备高可用性和容错能力，关键任务（如文件处理）不因单点故障而丢失或中断。
-- **可观测性 (Observability)**: 系统的每一个组件都必须是"透明"的，其状态、性能和错误都应易于监控、追踪和诊断。
-- **高性能 (Performance)**: (核心原则) 通过多级缓存策略将实时交互的延迟降至最低，并通过异步处理将后台任务的吞吐量最大化。
+---
 
-## 2.0 核心技术栈
+## 📖 项目简介
 
-| 类别             | 技术                             | 用途与说明                                                     |
-| ---------------- | -------------------------------- | -------------------------------------------------------------- |
-| 核心 API 服务    | Go, Fiber                        | 处理高并发 HTTP/WebSocket，作为系统主入口和智能检索编排中心    |
-| AI 工具服务      | Python                           | 运行 gRPC 服务和后台异步 Worker，专注于文本处理与向量化        |
-| 数据库           | PostgreSQL, pgvector             | 结构化数据、向量数据及其元数据统一存储，作为持久化数据源       |
-| L1 缓存 (本地)   | Go-cache / Concurrent Map        | 在 Go 服务实例内存中实现的本地缓存，提供纳秒级访问速度         |
-| L2 缓存 (分布式) | Redis                            | 作为所有 Go 服务实例共享的分布式缓存，并兼作异步任务的消息代理 |
-| 对象存储         | S3 API 兼容服务 (MinIO)          | 存储用户上传的文档等非结构化数据                               |
-| 内部同步通信     | gRPC                             | 用于 Go 和 Python 服务间低延迟、强类型的同步 RPC 调用          |
-| 容器化与部署     | Docker, Kubernetes               | 应用打包、部署、扩展和管理                                     |
-| 服务伸缩         | KEDA                             | 基于事件驱动（如 Redis 队列长度）的智能自动伸缩                |
-| 可观测性         | EFK, Prometheus, Grafana, Jaeger | 日志、指标、追踪的全方位监控体系                               |
+CogniCore 是一个高性能的文档智能问答平台，采用 RAG（检索增强生成）技术，让用户能够上传 PDF 文档并基于文档内容进行智能对话。系统支持对话树结构，允许从任意节点分支提问，构建复杂的知识探索路径。
 
-## 3.0 系统架构
+### ✨ 核心特性
 
-### 3.1 宏观架构图
+- 🚀 **高性能架构**: Go + Python 微服务，gRPC 通信，L1/L2 双层缓存
+- 📚 **智能文档处理**: 自动解析 PDF、分块、向量化，支持语义搜索
+- 🌲 **对话树结构**: 支持分支对话，从任意历史节点继续提问
+- 🔍 **混合检索模式**:
+  - **RAG 模式**: 基于文档内容的向量语义搜索 + 章节检索
+  - **纯对话模式**: 保留章节检索能力，但跳过向量化，快速上传
+- 🎯 **多 LLM 支持**: 支持 OpenAI、Google Gemini 等主流模型
+- 🔐 **API Key 管理**: 安全的密钥传递和存储机制
+- 📦 **对象存储**: MinIO/S3 兼容的文档存储
+- ⚡ **异步处理**: Redis 消息队列 + 自动重试机制
 
-```
-+---------------------------------------------------------------------------------------------+
-| Kubernetes Production Cluster                                                               |
-|                                                                                             |
-|  +-------------------------+                                                                |
-|  | External LLM Service    |                                                                |
-|  | (e.g., Google Gemini)   |                                                                |
-|  +------------+------------+                                                                |
-|               ^                                                                             |
-|               | (User's API Key Forwarded)                                                |
-|               |                                                                             |
-|  +------------+------------+              +---------------------------------------------+  |
-|  | Observability Stack     |              | User-Facing Traffic                         |  |
-|  | - Prometheus (Metrics)  |              | (HTTPS/WSS)                                 |  |
-|  | - Jaeger (Tracing)      |              |    v                                        |  |
-|  | - EFK (Logging)         |              | +-------------------------+                 |  |
-|  +-------------------------+              | | Ingress Controller      |                 |  |
-|       ^ ^ ^                               | +------------+------------+                 |  |
-|       | | |                               |              |                              |  |
-|  +----+ | +----+                          |              v                              |  |
-|  | Metrics    | Traces  Logs |            | +------------+-------------------+         |  |
-|  |            |              |            | | Core API Service (Go/Fiber)     |         |  |
-|  |            |              |            | | (K8s Deployment, HPA)           |         |  |
-|  |            v              v            | | - Auth, Orchestration, Caching |         |  |
-|  |  +---------+--------------+--+         | | - Prompt Engineering            |         |  |
-|  |  | Core API Service (Go)    <---------+ | - Direct LLM API Calls          |         |  |
-|  |  | gRPC Client & Server     |  gRPC   | | - gRPC Client: APIKey, Embedding|         |  |
-|  |  +--------+-+-------+-------+         | | - gRPC Server: IngestService    |         |  |
-|  |           | |       |                  | +--------+------------------------+         |  |
-|  |      gRPC | | Redis |  gRPC            |          |                                  |  |
-|  |    (API   | | Queue | (Embedding)      |          v                                  |  |
-|  |     Key)  | |       |                  | +--------+------------------------+         |  |
-|  |           v v       v                  | | AI Utility Service (Python)     |         |  |
-|  |  +--------+----------+---------+       | | (K8s Deployment, KEDA)          |         |  |
-|  |  | AI Utility Service (Python) |       | | - Port 50052: API Key Server    |         |  |
-|  |  | 三合一架构:                  |       | | - Port 50053: Embedding Server  |         |  |
-|  |  | 1. gRPC API Key Server     |       | | - Redis Worker: ETL Pipeline    |         |  |
-|  |  | 2. gRPC Embedding Server   |       | +-------------------------------------+  |  |
-|  |  | 3. Redis Async Worker      |       |          |        |          |               |  |
-|  |  +----------------------------+       |    +-----v-----+  +v---------+ +v--------+   |  |
-|               |         |         |            | Redis     |  | S3/MinIO | |PostgreSQL||  |
-|         +-----v-----+   v    +----v-----+      |(StatefulSet)| (External) |(StatefulSet)|  |
-|         | Redis     |        | S3/MinIO |       +-----------+  +----------+ +----------+|  |
-|         | (StatefulSet)     | (External)|                                              |  |
-|         +-----------+        +----------+                                               |  |
-|               |                   |                                                     |  |
-|         +-----v-------+    +------v------+                                              |  |
-|         | PostgreSQL  |    |             |                                              |  |
-|         | (StatefulSet)    |             |                                              |  |
-|         +-------------+    +-------------+                                              |  |
-+---------------------------------------------------------------------------------------------+
+### 🎯 核心设计原则
+
+- **可扩展性**: 微服务架构，支持水平扩展
+- **可靠性**: 重试机制、DLQ（死信队列）、优雅降级
+- **高性能**: 双层缓存、批量处理、流式传输
+- **可观测性**: 结构化日志、链路追踪、性能监控
+
+---
+
+## 🏗️ 系统架构
+
+### 技术栈
+
+| 层级         | 技术                    | 说明                           |
+| ------------ | ----------------------- | ------------------------------ |
+| **后端服务** | Go 1.24 + Fiber         | 高性能 HTTP/WebSocket API 服务 |
+| **AI 处理**  | Python 3.11+            | 文档处理、向量化、嵌入生成     |
+| **数据库**   | PostgreSQL + pgvector   | 存储文档、对话、向量数据       |
+| **缓存**     | Redis + go-cache        | L1 本地缓存 + L2 分布式缓存    |
+| **存储**     | MinIO / AWS S3          | 对象存储，兼容 S3 API          |
+| **RPC**      | gRPC + Protocol Buffers | 服务间高效通信                 |
+| **消息队列** | Redis List              | 异步任务队列                   |
+| **向量化**   | Sentence Transformers   | 本地嵌入模型 (384 维)          |
+| **LLM**      | OpenAI / Google Gemini  | 外部大语言模型 API             |
+
+### 架构图
+
+```mermaid
+graph TB
+    User[用户] -->|HTTP/WebSocket| Ingress[Nginx Ingress]
+    Ingress --> GoAPI[Go API Service<br/>Fiber + gRPC]
+
+    GoAPI -->|查询缓存| L1[L1 Cache<br/>go-cache]
+    GoAPI -->|查询缓存| Redis[Redis<br/>L2 Cache + Queue]
+    GoAPI -->|存储数据| PG[(PostgreSQL<br/>+ pgvector)]
+    GoAPI -->|上传文档| S3[MinIO/S3<br/>对象存储]
+    GoAPI -->|调用 LLM| LLM[OpenAI/Gemini<br/>API]
+
+    GoAPI <-->|gRPC: 接收文档块| Python[Python Service]
+    GoAPI -->|gRPC: 实时向量化| Python
+
+    Python -->|消费任务| Redis
+    Python -->|下载文档| S3
+    Python -->|本地嵌入模型| Model[Sentence<br/>Transformers]
+
+    style GoAPI fill:#4CAF50
+    style Python fill:#2196F3
+    style Redis fill:#FF9800
+    style PG fill:#9C27B0
+    style S3 fill:#00BCD4
 ```
 
-### 3.2 服务组件拆解
+### 服务职责划分
 
-#### Core API Service (Go)
+#### 🟢 Go API Service (核心服务)
 
-**职责**: (职责扩展) 系统的总入口、智能混合检索引擎，并内建两级缓存。
+**端口**: 3000 (HTTP)、50051 (gRPC 服务端)
 
-- 负责用户认证、会话管理、处理所有面向用户的 API 和 WebSocket 请求。
-- **文档管理**:
-  - 处理用户上传请求，生成 S3 预签名 URL
-  - 记录文档元数据到 PostgreSQL
-  - 将 ETL 任务推送到 Redis 队列
-- **gRPC 通信**:
-  - **作为客户端**:
-    - 调用 Python Embedding Service (端口 50053) 获取文本向量
-    - 调用 Python API Key Service (端口 50052) 传递用户的 API 密钥
-  - **作为服务端**:
-    - 监听 Python 的 IngestService 客户端连接 (端口 50051)
-    - 接收处理后的文档块和嵌入向量
-    - 将数据持久化到 PostgreSQL
+**职责**:
 
-**实现两级缓存策略 (L1 + L2 Caching)**:
+- 处理所有用户请求 (HTTP/WebSocket)
+- 文档上传管理（预签名 URL、元数据记录）
+- 聊天对话管理（对话树、历史记录）
+- 双层缓存策略 (L1 本地 + L2 Redis)
+- 混合检索（向量搜索 + 上下文检索）
+- LLM 调用编排（Prompt 工程、流式响应）
+- **gRPC 服务端**: 接收 Python 处理后的文档块
+- **gRPC 客户端**: 请求 Python 进行实时文本向量化
 
-- **L1 本地缓存**: 在每个 Go 服务实例的内存中维护一个高速缓存（使用 go-cache 等库）。
-- **L2 分布式缓存**: 使用 Redis 作为所有 Go 服务实例共享的二级缓存。
-- **数据读取流程**: 遵循 查询 L1 -> L1 未命中 -> 查询 L2 -> L2 未命中 -> 查询 PostgreSQL 的顺序。
-- **数据写入/更新流程**: 采用"缓存失效 (Cache Invalidation)"策略。
+**关键模块**:
 
-智能识别用户查询意图并执行混合检索策略。执行 Prompt 工程，直接调用外部 LLM 服务，并转发用户提供的 API 密钥。
+- `handlers/`: HTTP 请求处理
+- `services/`: 业务逻辑（聊天、文档、LLM、RAG）
+- `platform/cache/`: 两级缓存实现
+- `platform/grpc/`: gRPC 服务端和客户端
+- `repository/`: 数据库访问层
 
-#### AI Utility Service (Python) - AI 工具箱
+#### 🔵 Python Service (AI 工具箱)
 
-**定位**: 一个专注的、轻量级的"AI 工具箱"，负责所有与文本预处理和向量化相关的重计算。
+**端口**: 50053 (gRPC 服务端)
 
-**核心职责**:
+**职责**:
 
-- (异步) 文档解析、分块及元数据提取。
-- (异步和同步) 文本向量化，调用外部 LLM API 生成嵌入向量。
+- **Redis Worker**: 后台消费文档处理任务
+- 下载 PDF 文件（从预签名 URL）
+- PDF 解析、结构化分析、智能分块
+- 本地嵌入模型（Sentence Transformers）生成向量
+- **gRPC 服务端**: 提供实时文本向量化服务
+- **gRPC 客户端**: 流式发送处理后的文档块到 Go 服务
 
-**三合一运行架构** (在 `main.py` 中同时启动):
+**关键模块**:
 
-1. **gRPC API Key Server (端口 50052)**
+- `app/redis_worker.py`: 主业务循环
+- `infra/document_infra/`: PDF 处理、向量化
+- `infra/grpc_infra/`: gRPC 服务端和客户端
+- `service/grpc_embedding_service.py`: 嵌入服务
 
-   - 接收 Go 服务发送的 API 密钥
-   - 使用异步事件机制存储和分发密钥
-   - 支持多个并发任务的密钥管理
-   - 实现文件: `tasks/grpc_api_key.py`
+### gRPC 通信架构
 
-2. **gRPC Embedding Server (端口 50053)**
+系统实现了两个独立的 gRPC 服务：
 
-   - 提供实时文本向量化服务
-   - 支持 OpenAI 和 Gemini 两种提供商
-   - 接收文本，返回嵌入向量
-   - 实现文件: `tasks/grpc_embedding.py`
+| 服务                 | 端口  | 服务端 | 客户端 | 用途                                 |
+| -------------------- | ----- | ------ | ------ | ------------------------------------ |
+| **IngestService**    | 50051 | Go     | Python | Python 将处理后的文档块流式传输到 Go |
+| **EmbeddingService** | 50053 | Python | Go     | Go 请求 Python 进行实时文本向量化    |
 
-3. **Redis Worker (后台异步)**
-   - 从 Redis 队列消费 ETL 任务
-   - 完整的 PDF 处理流程：
-     - 下载 PDF (从 S3 预签名 URL)
-     - 解析和分块
-     - 等待 API 密钥 (从 gRPC API Key Server)
-     - 生成嵌入向量
-     - 通过 gRPC 流式发送到 Go 服务 (IngestService)
-   - 失败重试机制 (指数退避，最多 3 次)
-   - Dead Letter Queue (DLQ) 处理
-   - 实现文件: `tasks/redis_worker.py`
+**IngestService 流程** (Python → Go):
 
-**启动方式**:
-
-```python
-# main.py
-async def main():
-    loop = asyncio.get_running_loop()
-    set_main_event_loop(loop)
-
-    # 启动两个 gRPC 服务器（后台线程）
-    api_key_server = start_grpc_server()        # 端口 50052
-    embedding_server = start_embedding_grpc_server()  # 端口 50053
-
-    # 在主事件循环运行 Redis Worker
-    await redis_main_loop()
+```
+Python Worker
+  ↓ 处理 PDF，生成嵌入
+  ↓ 流式发送: [元数据] → [chunk1] → [chunk2] → ...
+  ↓
+Go Service
+  ↓ 接收所有 chunks
+  ↓ 批量插入 PostgreSQL
+  ↓ 返回结果: {chunks_stored, chunks_failed}
 ```
 
-### 3.3 核心流程时序图 (Core Workflow Sequence Diagram)
+**EmbeddingService 流程** (Go → Python):
 
-本图描绘了系统两大核心流程的详细交互步骤。
+```
+Go Service
+  ↓ 用户提问 "这个文档讲了什么？"
+  ↓ gRPC 调用: GetEmbedding(text)
+  ↓
+Python Service
+  ↓ 使用本地模型生成向量
+  ↓ 返回: [0.123, -0.456, ...]
+  ↓
+Go Service
+  ↓ 使用向量在 PostgreSQL 中进行相似度搜索
+```
+
+---
+
+## 🔄 核心工作流程
+
+### 1️⃣ 文档上传与处理流程
 
 ```mermaid
 sequenceDiagram
-    participant User as 用户 (浏览器)
-    participant GoService as 核心 API 服务 (Go)
-    participant S3 as 对象存储
-    participant Redis as Redis 队列
-    participant PythonService as AI 工具服务 (Python)
-    participant DB as PostgreSQL
-    participant L1Cache as L1 本地缓存
-    participant L2Cache as L2 Redis 缓存
-    participant LLM as 外部 LLM 服务
+    participant User as 用户
+    participant Go as Go Service
+    participant S3 as MinIO/S3
+    participant Redis as Redis Queue
+    participant Python as Python Worker
+    participant PG as PostgreSQL
 
-    Note over User,LLM: 阶段一: 异步处理 (后台任务)
+    User->>Go: 1. 请求上传 (文件名、大小)
+    Go->>S3: 2. 生成预签名 URL
+    Go-->>User: 3. 返回预签名 URL
 
-    User->>GoService: 1. 请求上传URL
-    GoService-->>User: 2. 返回预签名URL
+    User->>S3: 4. 直传文件到 S3
 
-    User->>S3: 3. (直传) 上传文档.pdf
+    User->>Go: 5. 通知上传完成
+    Go->>PG: 6. 记录文档元数据
+    Go->>Redis: 7. 推送任务到队列
+    Go-->>User: 8. 返回: "文档处理中..."
 
-    User->>GoService: 4. 通知: "上传成功"
-    GoService->>Redis: 5. 推送ETL任务到队列
-    GoService-->>User: 6. 立即响应: "文件已开始处理"
+    Python->>Redis: 9. 消费任务
+    Python->>S3: 10. 下载文件
+    Python->>Python: 11. PDF 解析、分块
+    Python->>Python: 12. 本地模型向量化
+    Python->>Go: 13. gRPC 流式发送 chunks
+    Go->>PG: 14. 批量存储 chunks + 向量
+    Go-->>Python: 15. 返回处理结果
 
-    PythonService->>Redis: 7. 从队列获取ETL任务
-    PythonService->>S3: 8. 下载文档.pdf
-    Note right of PythonService: 9. 执行ETL:<br/>解析, 分块, 向量化
-    PythonService->>GoService: 10. gRPC流式发送: IngestDocument<br/>(发送元数据 + 文本块 + 向量)
-    GoService->>DB: 11. 将接收到的文本块/向量/元数据存入DB
-    GoService-->>PythonService: 12. 返回处理结果 (chunks_stored, chunks_failed)
+    Note over Go,PG: 16. 触发自动分析
+    Go->>Python: 17. gRPC: 获取文档向量
+    Go->>PG: 18. 向量搜索相关内容
+    Go->>LLM: 19. 调用 LLM 生成摘要
+    Go->>PG: 20. 存储首条分析消息
+```
 
-    Note right of GoService: 13. 文档处理完成后<br/>触发自动分析
-    GoService->>DB: 14. 获取刚处理完的文档内容
-    GoService->>LLM: 15. 使用系统Prompt调用LLM进行分析
-    GoService->>DB: 16. 将分析结果作为第一条消息存入DB
+### 2️⃣ 智能问答流程（RAG 模式）
 
-    Note over User,LLM: 阶段二: 同步问答 (混合检索追问)
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant Go as Go Service
+    participant L1 as L1 Cache
+    participant Redis as L2 Cache
+    participant Python as Python Service
+    participant PG as PostgreSQL
+    participant LLM as LLM API
 
-    User->>+GoService: 17. 追问(指定父节点): "关于安全方面，具体有哪些建议？"<br/>(parent_message_id: 'msg-abc')
+    User->>Go: 1. 提问 (带 parent_id)
 
-    Note left of GoService: 18. Go服务识别出这是一个结合了<br/>上下文追问 + RAG检索的复杂请求
-
-    GoService->>+PythonService: 19. gRPC调用: GetEmbedding("关于安全方面...")
-    PythonService-->>-GoService: 20. 返回查询向量
-
-    GoService->>+DB: 21. (语义检索) 进行向量相似度搜索
-    DB-->>-GoService: 22. 返回与"安全建议"相关的文档片段
-
-    Note left of GoService: 23. (上下文检索) 获取对话分支历史 (两级缓存)
-    GoService->>L1Cache: 24. 先查L1本地缓存
-    alt L1未命中
-        L1Cache-->>GoService: 未找到
-        GoService->>L2Cache: 25. 再查L2 Redis缓存
-        alt L2未命中
-            L2Cache-->>GoService: 未找到
-            GoService->>DB: 26. 向上回溯对话树，获取分支历史
-            DB-->>GoService: 27. 返回历史记录
-            GoService->>L2Cache: 28. (写回) 将结果存入L2缓存
-            GoService->>L1Cache: 29. (写回) 将结果存入L1缓存
-        else L2命中
-            L2Cache-->>GoService: 30. 返回历史记录
-            GoService->>L1Cache: 31. (写回) 将结果存入L1缓存
+    Note over Go: 2. 双层缓存查询历史
+    Go->>L1: 3. 查询 L1 本地缓存
+    alt L1 未命中
+        Go->>Redis: 4. 查询 L2 Redis
+        alt L2 未命中
+            Go->>PG: 5. 回溯对话树
+            PG-->>Go: 6. 返回历史
+            Go->>Redis: 7. 写入 L2
         end
-    else L1命中
-        L1Cache-->>GoService: 32. 直接返回历史
+        Go->>L1: 8. 写入 L1
     end
 
-    Note left of GoService: 33. 构建最终Prompt<br/>(组合对话分支 + 检索片段 + 新问题)
+    Note over Go: 9. 向量检索
+    Go->>Python: 10. gRPC: 向量化问题
+    Python-->>Go: 11. 返回查询向量
+    Go->>PG: 12. 向量相似度搜索
+    PG-->>Go: 13. 返回相关文档块
 
-    GoService->>+LLM: 34. 调用LLM API
-    LLM-->>-GoService: 35. 返回生成的答案
-    GoService-->>-User: 36. 返回答案 + 来源引用
+    Note over Go: 14. 构建 Prompt
+    Go->>Go: 15. 组装: 历史+检索+问题
+    Go->>LLM: 16. 调用 LLM API
+    LLM-->>Go: 17. 返回生成答案
+
+    Go->>PG: 18. 存储新对话节点
+    Go->>L1: 19. 更新缓存
+    Go-->>User: 20. 返回答案 + 来源
 ```
 
-## 4.0 数据模型与接口契约
+### 3️⃣ 纯对话模式（非 RAG）
 
-### 4.1 数据模型 (PostgreSQL)
+当文档设置为非 RAG 模式时：
+
+- ✅ 保留对话历史上下文
+- ✅ 支持按章节进行原文检索（精确匹配）
+- ✅ 直接调用 LLM，快速响应
+- ✅ 适合自由对话、创意讨论
+- ❌ 不使用向量语义搜索
+
+---
+
+## 💾 数据模型
+
+### PostgreSQL 表结构
 
 ```sql
--- 开启 pgvector 插件
+-- 启用向量扩展
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 用户表
-CREATE TABLE users (
-    id UUID PRIMARY KEY,
-    email TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- 聊天会话表
-CREATE TABLE chat_sessions (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES users(id),
-    title VARCHAR(255) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- 聊天消息表 (树状结构)
-CREATE TABLE chat_messages (
-    id UUID PRIMARY KEY,
-    session_id UUID NOT NULL REFERENCES chat_sessions(id),
-    parent_message_id UUID REFERENCES chat_messages(id), -- 指向父消息，实现树状结构
-    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-    content TEXT NOT NULL,
-    metadata JSONB,
-    created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- 上传文件表
-CREATE TABLE uploaded_files (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL REFERENCES users(id),
+-- 文档表
+CREATE TABLE documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
     filename VARCHAR(255) NOT NULL,
     storage_path TEXT NOT NULL UNIQUE,
-    status TEXT NOT NULL,
+    file_size BIGINT,
+    status VARCHAR(50) NOT NULL, -- 'pending', 'processing', 'completed', 'failed'
+    rag_mode BOOLEAN DEFAULT true, -- true: RAG模式, false: 纯对话模式
+    root_chat_id UUID, -- 对话树根节点
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 文档块表（带向量）
+CREATE TABLE document_chunks (
+    id BIGSERIAL PRIMARY KEY,
+    file_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_id VARCHAR(255) NOT NULL UNIQUE,
+    chapter TEXT,
+    chapter_num TEXT,
+    content TEXT NOT NULL,
+    embedding VECTOR(384) NOT NULL, -- 384维向量（本地模型）
+    chunk_index INT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 文件块与向量表 (带元数据)
-CREATE TABLE file_chunks (
-    id BIGSERIAL PRIMARY KEY,
-    file_id UUID NOT NULL REFERENCES uploaded_files(id),
-    chunk_text TEXT NOT NULL,
-    embedding VECTOR(384) NOT NULL,
-    metadata JSONB -- 存储来源信息，如页码、章节
+-- 向量索引（IVFFlat，加速相似度搜索）
+CREATE INDEX ON document_chunks
+USING ivfflat (embedding vector_l2_ops)
+WITH (lists = 100);
+
+-- 文本索引（支持全文搜索）
+CREATE INDEX idx_chunk_content ON document_chunks USING gin(to_tsvector('english', content));
+
+-- 对话节点表（树状结构）
+CREATE TABLE chat_nodes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    parent_id UUID REFERENCES chat_nodes(id) ON DELETE CASCADE, -- NULL 表示根节点
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX ON file_chunks USING ivfflat (embedding vector_l2_ops) WITH (lists = 100);
+-- 索引
+CREATE INDEX idx_chat_file ON chat_nodes(file_id);
+CREATE INDEX idx_chat_parent ON chat_nodes(parent_id);
+CREATE INDEX idx_doc_user ON documents(user_id);
+CREATE INDEX idx_chunk_file ON document_chunks(file_id);
 ```
 
-### 4.2 API & RPC 接口契约
+### 对话树结构
 
-#### RESTful API 契约 (Go Service)
+系统支持树状对话结构，允许从任意历史节点分支提问：
 
-- **POST** `/api/v1/auth/register`, **POST** `/api/v1/auth/login`
-- **GET** `/api/v1/chats`, **POST** `/api/v1/chats`
-- **POST** `/api/v1/chats/{chat_id}/messages` (body 中可包含 parent_message_id)
-- **POST** `/api/v1/files/presigned-url`, **POST** `/api/v1/files/upload-success`
-- **POST** `/internal/analyze-file` (内部 API，由 Python 服务调用)
+```
+文档分析 (root)
+├─ "总结第一章" (child 1)
+│  ├─ "第一章的关键概念" (grandchild 1-1)
+│  └─ "与第二章的关系" (grandchild 1-2)
+└─ "作者的观点" (child 2)
+   └─ "有哪些例证" (grandchild 2-1)
+```
 
-#### gRPC 接口契约 (cognicore.proto)
+每个节点包含：
 
-**当前系统实现了三个独立的 gRPC 服务，各司其职：**
+- `id`: 节点唯一标识
+- `parent_id`: 父节点 ID（为 NULL 表示根节点）
+- `question`: 用户提问
+- `answer`: AI 回答
+- `file_id`: 关联的文档
 
-##### 1. IngestService (Python 客户端 → Go 服务端，端口 50051)
+### 缓存策略
 
-**用途**: Python Worker 将处理后的文档块流式传输给 Go 服务
+**L1 缓存（本地内存，go-cache）**:
 
-```protobuf
-syntax = "proto3";
-package cognicore;
+- 存储: 对话历史、文档元数据
+- 过期时间: 30 分钟 - 1 小时
+- 优势: 纳秒级访问，无网络开销
 
-service IngestService {
-  // 流式上传：Python 持续发送文档数据，Go 最后返回 ACK
-  rpc IngestDocument(stream IngestRequest) returns (IngestResponse);
+**L2 缓存（Redis）**:
 
-  // 单个块上传（用于重试）
-  rpc IngestSingleChunk(TextChunk) returns (IngestResponse);
+- 存储: 对话历史、热点数据
+- 过期时间: 1 小时
+- 优势: 多实例共享，持久化支持
+
+**缓存失效策略**:
+
+- 新增对话节点 → 失效父节点的历史缓存
+- 文档状态变更 → 失效文档元数据缓存
+- 采用 Cache-Aside 模式（先读缓存，未命中则读 DB 并写入缓存）
+
+---
+
+## 🚀 快速开始
+
+### 环境要求
+
+- **Go**: 1.24+
+- **Python**: 3.11+
+- **Docker** & **Docker Compose**: 最新版
+- **PostgreSQL**: 15+ (带 pgvector 扩展)
+- **Redis**: 7+
+- **MinIO** 或 **AWS S3**
+
+### 方式一：Docker Compose（推荐）
+
+#### 1. 克隆项目
+
+```bash
+git clone <repository-url>
+cd Reading_project
+```
+
+#### 2. 启动基础设施
+
+```bash
+cd go_chat_backend
+docker-compose up -d
+```
+
+这将启动：
+
+- PostgreSQL (端口 5432)
+- Redis (端口 6379)
+- MinIO (端口 9000, 控制台 9001)
+
+访问 MinIO 控制台: http://localhost:9001
+
+- 用户名: `minioadmin`
+- 密码: `minioadmin`
+
+#### 3. 初始化数据库
+
+```bash
+# 连接到 PostgreSQL
+psql -h localhost -U postgres -d go_chat_db
+
+# 执行 SQL（见"数据模型"章节）
+CREATE EXTENSION IF NOT EXISTS vector;
+-- ... 其他建表语句
+```
+
+#### 4. 配置环境变量
+
+**Go 服务** (`go_chat_backend/.env`):
+
+```bash
+cp .env.example .env
+# 编辑 .env，配置数据库、Redis、MinIO
+```
+
+**Python 服务** (`pdf_processor/.env`):
+
+```bash
+cp .env.example .env
+# 编辑 .env，配置与 Go 服务一致的连接信息
+```
+
+#### 5. 启动 Go 服务
+
+```bash
+cd go_chat_backend
+go mod download
+go run main.go
+```
+
+服务启动在: http://localhost:3000
+
+#### 6. 启动 Python 服务
+
+```bash
+cd pdf_processor
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# 生成 gRPC 代码
+python -m grpc_tools.protoc \
+  -I./infra/grpc_infra/protos \
+  --python_out=./infra/grpc_infra/protos \
+  --grpc_python_out=./infra/grpc_infra/protos \
+  ./infra/grpc_infra/protos/cognicore.proto
+
+# 启动服务
+python main.py
+```
+
+### 方式二：手动启动
+
+#### 1. 安装 PostgreSQL + pgvector
+
+```bash
+# macOS
+brew install postgresql@15
+brew install pgvector
+
+# Ubuntu
+sudo apt install postgresql-15 postgresql-15-pgvector
+```
+
+#### 2. 安装 Redis
+
+```bash
+# macOS
+brew install redis
+brew services start redis
+
+# Ubuntu
+sudo apt install redis-server
+sudo systemctl start redis
+```
+
+#### 3. 安装 MinIO
+
+```bash
+# macOS
+brew install minio
+minio server ~/minio-data --console-address ":9001"
+```
+
+#### 4. 按照 Docker Compose 方式的步骤 4-6 启动服务
+
+### 测试接口
+
+#### 1. 健康检查
+
+```bash
+curl http://localhost:3000/health
+# 响应: {"status": "ok"}
+```
+
+#### 2. 上传文档
+
+```bash
+# 步骤 1: 获取预签名 URL
+curl -X POST http://localhost:3000/api/v1/documents/presigned-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filename": "test.pdf",
+    "file_size": 1024000,
+    "user_id": "user-123"
+  }'
+
+# 响应: {"upload_url": "http://...", "doc_id": "..."}
+
+# 步骤 2: 上传文件到预签名 URL
+curl -X PUT "<upload_url>" \
+  -H "Content-Type: application/pdf" \
+  --upload-file test.pdf
+
+# 步骤 3: 通知上传完成
+curl -X POST http://localhost:3000/api/v1/documents/upload-success \
+  -H "Content-Type: application/json" \
+  -d '{
+    "doc_id": "<doc_id>",
+    "user_id": "user-123"
+  }'
+```
+
+#### 3. 提问对话
+
+```bash
+curl -X POST http://localhost:3000/api/v1/chat/ask \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_id": "<doc_id>",
+    "question": "这个文档讲了什么？",
+    "parent_id": "",
+    "user_id": "user-123",
+    "api_key": "your-openai-api-key",
+    "provider": "openai",
+    "model": "gpt-4"
+  }'
+```
+
+#### 4. 获取对话树
+
+```bash
+curl http://localhost:3000/api/v1/chat/tree/<doc_id>
+```
+
+---
+
+## 📡 API 接口文档
+
+### RESTful API
+
+#### 1. 健康检查
+
+```http
+GET /health
+```
+
+**响应**:
+
+```json
+{
+  "status": "ok"
 }
+```
 
-message IngestRequest {
-  oneof request_type {
-    DocumentMetadata metadata = 1;  // 第一条消息：元信息
-    TextChunk chunk = 2;             // 后续消息：文本块
+#### 2. 文档上传流程
+
+**步骤 1: 获取预签名 URL**
+
+```http
+POST /api/v1/documents/presigned-url
+Content-Type: application/json
+
+{
+  "filename": "example.pdf",
+  "file_size": 1024000,
+  "user_id": "user-123",
+  "rag_mode": true  // 可选，默认 true
+}
+```
+
+**响应**:
+
+```json
+{
+  "upload_url": "http://minio:9000/documents/...",
+  "doc_id": "uuid-xxx",
+  "expires_at": "2025-11-09T10:00:00Z"
+}
+```
+
+**步骤 2: 上传文件**
+
+```http
+PUT <upload_url>
+Content-Type: application/pdf
+Body: <binary-pdf-data>
+```
+
+**步骤 3: 通知上传完成**
+
+```http
+POST /api/v1/documents/upload-success
+Content-Type: application/json
+
+{
+  "doc_id": "uuid-xxx",
+  "user_id": "user-123"
+}
+```
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "message": "文档处理中...",
+  "doc_id": "uuid-xxx"
+}
+```
+
+#### 3. 聊天对话
+
+**发起提问**
+
+```http
+POST /api/v1/chat/ask
+Content-Type: application/json
+
+{
+  "file_id": "uuid-xxx",
+  "question": "这个文档的主要内容是什么？",
+  "parent_id": "",  // 空字符串表示根节点，否则为父节点 ID
+  "user_id": "user-123",
+  "api_key": "sk-...",  // 用户的 LLM API Key
+  "provider": "openai",  // "openai" 或 "gemini"
+  "model": "gpt-4"  // 或 "gemini-pro"
+}
+```
+
+**响应**:
+
+```json
+{
+  "id": "node-uuid",
+  "answer": "这个文档主要讲述了...",
+  "question": "这个文档的主要内容是什么？",
+  "tree": {
+    "id": "root-uuid",
+    "question": "",
+    "answer": "文档自动分析...",
+    "children": [
+      {
+        "id": "node-uuid",
+        "question": "这个文档的主要内容是什么？",
+        "answer": "这个文档主要讲述了...",
+        "children": []
+      }
+    ]
   }
 }
+```
 
-message DocumentMetadata {
-  string file_id = 1;
-  string user_id = 2;
-  string filename = 3;
-  int32 total_pages = 4;
-  int32 estimated_chunks = 5;
-  string file_hash = 6;
-  int64 file_size = 7;
-  string created_at = 8;
-}
+**从历史节点分支提问**
 
-message TextChunk {
-  string chunk_id = 1;
-  string file_id = 2;
-  string chapter = 3;
-  string chunk_text = 5;
-  repeated float embedding_vector = 6;  // 嵌入向量
-  int32 chunk_index = 8;
-}
+```http
+POST /api/v1/chat/ask
+Content-Type: application/json
 
-message IngestResponse {
-  bool success = 1;
-  string message = 2;
-  int32 chunks_received = 3;
-  int32 chunks_stored = 4;
-  int32 chunks_failed = 5;
-  int64 processing_time_ms = 7;
-  string file_id = 8;
+{
+  "file_id": "uuid-xxx",
+  "question": "能详细说明第三点吗？",
+  "parent_id": "node-uuid",  // 指定父节点 ID
+  "user_id": "user-123",
+  "api_key": "sk-...",
+  "provider": "openai",
+  "model": "gpt-4"
 }
 ```
 
-**实现文件**:
+**指定章节进行提问（非 RAG 模式也支持）**
 
-- Go 服务端: `go_chat_backend/platform/grpc/chunk/grpc_chunk.go`
-- Python 客户端: `pdf_processor/services/ingest_client.py`
+```http
+POST /api/v1/chat/ask
+Content-Type: application/json
 
-##### 2. APIKeyService (Go 客户端 → Python 服务端，端口 50052)
-
-**用途**: Go 服务将用户的 API 密钥传递给 Python Worker
-
-```protobuf
-service APIKeyService {
-  rpc ProvideAPIKey(APIKeyRequest) returns (APIKeyResponse);
-}
-
-message APIKeyRequest {
-  string task_id = 1;   // 任务 ID
-  string api_key = 2;   // API Key (OpenAI, Gemini, etc.)
-  string provider = 3;  // Provider name: "openai" or "gemini"
-}
-
-message APIKeyResponse {
-  bool success = 1;
-  string message = 2;
+{
+  "file_id": "uuid-xxx",
+  "question": "这个章节的核心观点是什么？",
+  "section": "第三章 实践案例",  // 指定要检索的章节
+  "parent_id": "",
+  "user_id": "user-123",
+  "api_key": "sk-...",
+  "provider": "openai",
+  "model": "gpt-4"
 }
 ```
 
-**实现文件**:
+> 💡 **提示**:
+>
+> - `section` 参数在 RAG 和非 RAG 模式下都有效
+> - RAG 模式：章节检索 + 向量搜索（双重检索）
+> - 非 RAG 模式：仅章节检索（快速定位）
 
-- Go 客户端: `go_chat_backend/platform/grpc/api_key/grpc_apikey.go`
-- Python 服务端: `pdf_processor/tasks/grpc_api_key.py`
+#### 4. 获取对话树
 
-**工作流程**:
+```http
+GET /api/v1/chat/tree/<file_id>
+```
 
-1. Go 服务接收用户上传请求和 API 密钥
-2. 通过 gRPC 调用 Python 的 APIKeyService
-3. Python 使用异步事件机制存储密钥
-4. Python Worker 等待并获取对应任务的 API 密钥
+**响应**:
 
-##### 3. EmbeddingService (Go 客户端 → Python 服务端，端口 50053)
+```json
+{
+  "id": "root-uuid",
+  "question": "",
+  "answer": "文档自动分析结果...",
+  "children": [
+    {
+      "id": "child-1",
+      "question": "第一章讲了什么？",
+      "answer": "第一章主要...",
+      "children": [
+        {
+          "id": "grandchild-1",
+          "question": "有什么例子？",
+          "answer": "例如...",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "child-2",
+      "question": "总结全文",
+      "answer": "全文总结...",
+      "children": []
+    }
+  ]
+}
+```
 
-**用途**: Go 服务请求 Python 进行实时文本向量化
+#### 5. 设置文档 RAG 模式
+
+```http
+POST /api/v1/documents/<doc_id>/rag-mode
+Content-Type: application/json
+
+{
+  "rag_mode": false  // true: RAG 模式, false: 纯对话模式
+}
+```
+
+### gRPC API
+
+#### IngestService (Python → Go)
+
+**端口**: 50051
+
+**方法**: `IngestDocument(stream IngestRequest) returns (IngestResponse)`
+
+**流程**:
+
+1. Python 发送 `DocumentMetadata`
+2. Python 流式发送 `TextChunk` (包含向量)
+3. Go 批量存储到 PostgreSQL
+4. Go 返回 `IngestResponse`
+
+#### EmbeddingService (Go → Python)
+
+**端口**: 50053
+
+**方法**: `GetEmbedding(EmbeddingRequest) returns (EmbeddingResponse)`
+
+**请求**:
 
 ```protobuf
-service EmbeddingService {
-  rpc GetEmbedding(EmbeddingRequest) returns (EmbeddingResponse);
-}
-
 message EmbeddingRequest {
-  string task_id = 1;   // 任务 ID（用于日志追踪）
-  string text = 2;      // 要向量化的文本
-  string api_key = 3;   // API Key
-  string provider = 4;  // Provider name: "openai" or "gemini"
+  string task_id = 1;
+  string text = 2;
+  string api_key = 3;  // 可选，使用本地模型时不需要
+  string provider = 4;  // "local", "openai", "gemini"
 }
+```
 
+**响应**:
+
+```protobuf
 message EmbeddingResponse {
   bool success = 1;
   string message = 2;
-  repeated float embeddings = 3;  // 向量结果
-  int32 dimension = 4;             // 向量维度
+  repeated float embeddings = 3;  // 384 维向量
+  int32 dimension = 4;
 }
 ```
 
-**实现文件**:
-
-- Go 客户端: `go_chat_backend/platform/grpc/embedding/grpc_embedding.go`
-- Python 服务端: `pdf_processor/tasks/grpc_embedding.py`
-
-**支持的 Provider**:
-
-- **OpenAI**: text-embedding-3-small (1536 维度)
-- **Gemini**: models/text-embedding-004 (768 维度)
-
-#### gRPC 架构说明
-
-**服务角色总结**:
-| 服务 | 端口 | 服务端 | 客户端 | 用途 |
-|------|------|--------|--------|------|
-| IngestService | 50051 | Go | Python | 接收处理后的文档块 |
-| APIKeyService | 50052 | Python | Go | 传递 API 密钥 |
-| EmbeddingService | 50053 | Python | Go | 实时文本向量化 |
-
-**Proto 文件位置**:
-
-- `go_chat_backend/platform/proto/cognicore.proto`
-- `pdf_processor/protos/cognicore.proto`
-
 ---
 
-## 附录：架构更新说明
+## 🎯 核心特性详解
 
-### 版本 2.6 更新内容 (2025-11-04)
+### 1. 双层缓存策略
 
-**主要变更：gRPC 三服务架构实现**
+**架构设计**:
 
-本次更新完善了 Go 和 Python 服务之间的 gRPC 通信架构，将原有的单一向量化服务扩展为三个独立的 gRPC 服务，各司其职，提升了系统的模块化和可维护性。
-
-#### 1. 新增 IngestService (Python → Go)
-
-- **端口**: 50051
-- **用途**: Python Worker 将处理后的文档块流式传输到 Go 服务
-- **特性**:
-  - 支持流式传输，降低内存占用
-  - 先发送文档元数据，再流式发送所有文本块
-  - 每个文本块包含完整的嵌入向量
-
-#### 2. 新增 APIKeyService (Go → Python)
-
-- **端口**: 50052
-- **用途**: Go 服务将用户提供的 API 密钥传递给 Python
-- **特性**:
-  - 使用异步事件机制进行密钥分发
-  - 支持多个并发任务的密钥管理
-  - 30 秒超时保护
-
-#### 3. 增强 EmbeddingService (Go → Python)
-
-- **端口**: 50053
-- **用途**: 实时文本向量化服务
-- **特性**:
-  - 支持 OpenAI 和 Gemini 两种提供商
-  - 请求中包含 API 密钥和 provider 信息
-  - 返回嵌入向量和维度信息
-
-#### 4. Python 服务三合一架构
-
-Python 服务（`pdf_processor/main.py`）现在同时运行：
-
-- 两个 gRPC 服务器（在后台线程中）
-- 一个 Redis Worker（在主事件循环中）
-
-#### 5. 重试和错误处理机制
-
-- 失败任务自动重试，最多 3 次
-- 指数退避策略（2^retry_count 秒）
-- 超过最大重试次数的任务移入 Dead Letter Queue (DLQ)
-
-#### 6. 配置变更
-
-新增环境变量：
-
-```env
-# Go 服务
-GO_GRPC_INGEST_PORT=:50051
-GRPC_SERVER_ADDR=localhost:50052
-GRPC_EMBEDDING_ADDR=localhost:50053
-
-# Python 服务
-GRPC_SERVER_PORT=50052
-GRPC_EMBEDDING_PORT=50053
-GO_GRPC_ADDR=localhost:50051
+```
+用户请求
+  ↓
+L1 Cache (本地内存, go-cache)
+  ↓ 未命中
+L2 Cache (Redis)
+  ↓ 未命中
+PostgreSQL
+  ↓
+写回 L2 → 写回 L1
 ```
 
-**向后兼容性**:
+**性能对比**:
 
-- 保持原有的 RESTful API 不变
-- 数据库结构保持一致
-- 文档上传流程基本保持不变，只是内部处理方式优化
+- L1 命中: < 1ms
+- L2 命中: 2-5ms
+- DB 查询: 10-50ms
 
-**性能提升**:
+**实现示例**:
 
-- 通信效率提升 30-50%（gRPC vs HTTP/JSON）
-- 内存占用降低 70-80%（流式传输）
-- 大文档处理时间减少 25%
+```go
+func (s *ChatService) GetHistoryByID(ctx context.Context, parentID string) ([]*models.ChatNode, error) {
+    cacheKey := fmt.Sprintf("chat_node:%s:%s", fileID, parentID)
 
-**相关文档**:
+    // L1 查询
+    if cached, ok := s.cacheService.GetCache(cacheKey); ok {
+        return cached.([]*models.ChatNode), nil
+    }
 
-- 详细的架构变更说明：[ARCHITECTURE_CHANGES.md](./ARCHITECTURE_CHANGES.md)
-- 分布式入门指南：[ARCHITECTURE_BEGINNER.md](./ARCHITECTURE_BEGINNER.md)
-- 完整技术栈蓝图：[ARCHITECTURE_FULL_STACK.md](./ARCHITECTURE_FULL_STACK.md)
+    // 数据库查询
+    history, err := s.chatRepo.GetChatHistory(ctx, fileID, parentID)
+
+    // 写回缓存
+    s.cacheService.SetCache(cacheKey, history, 30*time.Minute)
+    return history, nil
+}
+```
+
+### 2. RAG vs 纯对话模式
+
+**RAG 模式** (`rag_mode: true`):
+
+- ✅ 基于文档内容的精准问答
+- ✅ **向量语义搜索**，返回相关片段
+- ✅ 答案可追溯，提供来源引用
+- ✅ 智能理解语义相关性
+- ⚡ 向量化开销：首次上传需要生成 384 维向量
+
+**纯对话模式** (`rag_mode: false`):
+
+- ✅ 快速上传，无向量化开销
+- ✅ **支持章节检索**（通过章节名称精确匹配）
+- ✅ 保留对话上下文
+- ✅ 直接 LLM 对话，适合自由讨论
+- ❌ 不支持向量语义搜索
+
+**两种模式的区别**:
+
+| 特性     | RAG 模式               | 纯对话模式                   |
+| -------- | ---------------------- | ---------------------------- |
+| 向量化   | ✅ 生成 384 维向量     | ❌ 零向量占位                |
+| 语义搜索 | ✅ 基于向量相似度      | ❌ 不支持                    |
+| 章节检索 | ✅ 支持（精确匹配）    | ✅ 支持（精确匹配）          |
+| 上传速度 | 较慢（需向量化）       | 快速（跳过向量化）           |
+| 适用场景 | 精准文档问答、语义理解 | 自由对话、快速浏览、已知章节 |
+
+**检索策略对比**:
+
+```
+RAG 模式提问流程：
+├─ 1. 检查是否指定 section → 精确检索章节内容
+├─ 2. 对问题进行向量化 → 语义搜索相关片段
+└─ 3. 组合：章节内容 + 相似片段 + 历史对话 → 发送给 LLM
+
+非 RAG 模式提问流程：
+├─ 1. 检查是否指定 section → 精确检索章节内容
+├─ 2. 跳过向量搜索
+└─ 3. 组合：章节内容 + 历史对话 → 发送给 LLM
+```
+
+**实际代码逻辑** (`BuildPrompt` 函数):
+
+```go
+// 第一步：章节检索（两种模式都支持）
+if section != "" {
+    chunkContext, _ := s.chunkRepository.GetNodeBySection(ctx, section, fileID)
+    // SQL: SELECT * FROM document_chunks WHERE chapter = ? AND file_id = ?
+    builder.WriteString(fmt.Sprintf("Section %s:\n%s\n\n", section, chunkContext.ChunkText))
+}
+
+// 第二步：向量搜索（仅 RAG 模式）
+if ragMode {
+    embedding, _ := s.GRPCService.GetEmbedding(question)
+    similar, _ := s.chunkRepository.SearchSimilar(ctx, embedding, 1)
+    // SQL: SELECT * FROM document_chunks ORDER BY embedding <=> ? LIMIT 1
+    builder.WriteString(fmt.Sprintf("Similar context:\n%s\n\n", similar[0].ChunkText))
+}
+```
+
+**切换模式示例**:
+
+```bash
+# 切换为纯对话模式
+curl -X POST http://localhost:3000/api/v1/documents/<doc_id>/rag-mode \
+  -H "Content-Type: application/json" \
+  -d '{"rag_mode": false}'
+
+# 切换回 RAG 模式
+curl -X POST http://localhost:3000/api/v1/documents/<doc_id>/rag-mode \
+  -H "Content-Type: application/json" \
+  -d '{"rag_mode": true}'
+```
+
+### 3. 异步处理与重试机制
+
+**流程**:
+
+```
+1. 任务入队 (Redis List)
+2. Python Worker 消费
+3. 处理失败？
+   ├─ 是 → retry_count < 3？
+   │    ├─ 是 → 指数退避重试 (2^n 秒)
+   │    └─ 否 → 移入 DLQ
+   └─ 否 → 成功完成
+```
+
+### 4. 向量搜索与章节检索
+
+系统支持两种检索方式：
+
+#### 方式一：向量语义搜索（仅 RAG 模式）
+
+通过向量相似度查找语义相关的内容：
+
+**查询语句**:
+
+```sql
+SELECT
+    chunk_id,
+    content,
+    chapter,
+    1 - (embedding <=> $1) AS similarity
+FROM document_chunks
+WHERE file_id = $2
+ORDER BY embedding <=> $1  -- 余弦距离
+LIMIT 5;
+```
+
+**参数**: `$1`: 查询向量（384 维），`$2`: 文档 ID
+
+**优势**: 理解语义相关性，跨章节智能搜索，模糊匹配
+
+#### 方式二：章节精确检索（两种模式都支持）
+
+通过章节名称进行精确匹配：
+
+**查询语句**:
+
+```sql
+SELECT * FROM document_chunks
+WHERE chapter = $1 AND file_id = $2
+LIMIT 1;
+```
+
+**使用示例**:
+
+```json
+{
+  "question": "这个章节讲了什么？",
+  "section": "第一章 概述", // 指定章节名称
+  "file_id": "uuid-xxx"
+}
+```
+
+**优势**: 快速定位特定章节，无需向量化，零延迟
 
 ---
 
-**文档维护者**: CogniCore Team
-**最后更新**: 2025-11-04
+## 📁 项目结构
+
+```
+Reading_project/
+├── go_chat_backend/          # Go 后端服务
+│   ├── main.go
+│   ├── config/               # 配置管理
+│   ├── handlers/             # HTTP 处理器
+│   ├── services/             # 业务逻辑
+│   ├── repository/           # 数据访问层
+│   ├── platform/             # 基础设施
+│   │   ├── cache/           # 缓存实现
+│   │   ├── grpc/            # gRPC 客户端和服务端
+│   │   ├── redis/           # Redis 连接
+│   │   └── storage/         # S3/MinIO 客户端
+│   └── models/              # 数据模型
+│
+└── pdf_processor/            # Python AI 服务
+    ├── main.py
+    ├── app/                  # 应用层
+    │   ├── redis_worker.py  # Redis 任务消费者
+    │   └── doc_streamer.py  # 文档流式发送
+    ├── service/             # gRPC 服务
+    └── infra/               # 基础设施
+        ├── bucket_infra/    # 对象存储
+        ├── document_infra/  # 文档处理
+        └── grpc_infra/      # gRPC 基础设施
+```
+
+---
+
+## 🐛 常见问题
+
+### Q1: 文档上传后一直显示"处理中"
+
+**解决**:
+
+```bash
+# 检查 Python 服务状态
+ps aux | grep python
+
+# 查看日志
+tail -f pdf_processor/logs/app.log
+
+# 检查 Redis 连接
+redis-cli ping
+```
+
+### Q2: gRPC 连接失败
+
+**解决**:
+
+```bash
+# 检查端口占用
+lsof -i :50051
+lsof -i :50053
+
+# 测试 gRPC 连接
+grpcurl -plaintext localhost:50053 list
+```
+
+### Q3: 向量搜索返回无关结果
+
+**解决**:
+
+```sql
+-- 检查向量维度
+SELECT pg_typeof(embedding) FROM document_chunks LIMIT 1;
+
+-- 重建索引
+DROP INDEX IF EXISTS document_chunks_embedding_idx;
+CREATE INDEX ON document_chunks
+USING ivfflat (embedding vector_l2_ops)
+WITH (lists = 100);
+```
+
+---
+
+## 📊 性能优化
+
+### 1. 数据库优化
+
+```sql
+-- 定期 VACUUM
+VACUUM ANALYZE document_chunks;
+
+-- 调整索引参数
+CREATE INDEX ON document_chunks
+USING ivfflat (embedding vector_l2_ops)
+WITH (lists = 200);  -- 根据数据量调整
+```
+
+### 2. 缓存优化
+
+```go
+// 热点数据延长过期时间
+s.cacheService.SetCache(key, value, 1*time.Hour)
+
+// 预热缓存
+func (s *ChatService) WarmupCache(ctx context.Context, fileID string) {
+    history, _ := s.chatRepo.GetChatHistory(ctx, fileID, rootID)
+    s.cacheService.SetCache(cacheKey, history, time.Hour)
+}
+```
+
+### 3. 并发处理
+
+```python
+# 增加 gRPC 工作线程
+server = grpc.server(
+    futures.ThreadPoolExecutor(max_workers=50),
+)
+```
+
+---
+
+## 🚢 部署
+
+### Docker Compose
+
+```bash
+# 构建并启动
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f
+```
+
+### 环境变量
+
+**Go 服务**:
+
+```env
+PORT=3000
+PG_HOST=localhost
+PG_USER=postgres
+PG_PASSWORD=your-password
+REDIS_URL=redis://localhost:6379
+BUCKET_ENDPOINT=localhost:9000
+GO_GRPC_INGEST_PORT=50051
+GRPC_EMBEDDING_ADDR=localhost:50053
+```
+
+**Python 服务**:
+
+```env
+REDIS_URL=redis://localhost:6379
+BUCKET_ENDPOINT=localhost:9000
+EMBEDDING_MODEL_NAME=paraphrase-multilingual-MiniLM-L12-v2
+GO_GRPC_INGEST_ADDR=localhost:50051
+GRPC_EMBEDDING_PORT=50053
+```
+
+---
+
+## 🤝 贡献
+
+欢迎贡献！请遵循：
+
+1. Fork 项目
+2. 创建特性分支
+3. 提交更改
+4. 开启 Pull Request
+
+---
+
+## 📄 许可证
+
+MIT License
+
+---
+
+## 📚 相关资源
+
+- [Fiber 文档](https://docs.gofiber.io/)
+- [pgvector](https://github.com/pgvector/pgvector)
+- [gRPC Go](https://grpc.io/docs/languages/go/)
+- [Sentence Transformers](https://www.sbert.net/)
+
+---
+
+**最后更新**: 2025-11-09
+**文档版本**: v3.0
+**项目状态**: ✅ 生产就绪

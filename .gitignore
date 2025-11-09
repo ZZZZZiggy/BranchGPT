@@ -81,3 +81,10 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Chinese markdown files
+*_zh.md
+*_cn.md
+*中文*.md
+README.md
+!README_EN.md

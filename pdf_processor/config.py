@@ -18,7 +18,6 @@ EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "paraphrase-multilingua
 EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "384"))
 
 GO_GRPC_INGEST_ADDR = os.getenv("GO_GRPC_INGEST_ADDR", "localhost:50051")  # Python → Go (数据注入)
-GRPC_SERVER_PORT = int(os.getenv("GRPC_SERVER_PORT", "50052"))  # Go → Python (API Key 接收)
 GRPC_EMBEDDING_PORT = int(os.getenv("GRPC_EMBEDDING_PORT", "50053"))  # Go → Python (文本向量化)
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

@@ -22,6 +22,7 @@ type ConfirmUploadReq struct {
 	ApiKey   string `json:"api_key"`
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
+	RagMode  string `json:"rag_mode"`
 }
 type ConfirmUploadResp struct {
 	Message string `json:"message"`

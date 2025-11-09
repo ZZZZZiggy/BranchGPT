@@ -45,9 +45,11 @@ def extract_chapter_number(chapter_title):
 
 
 def analyze_text_structure(doc):
+    import sys
     font_info = defaultdict(int)
 
     # 第一遍：收集所有字体大小和字体名
+    print(f"DEBUG: Starting font collection, total pages: {len(doc)}", file=sys.stderr)
     for page in doc:
         blocks = page.get_text("dict")
         for block in blocks["blocks"]:
@@ -64,17 +66,33 @@ def analyze_text_structure(doc):
     # 识别正文字体大小和字体名称
     context_font = max(font_info.items(), key=lambda x: x[1])[0]
     title_fonts = [size for size, _ in sorted_fonts[:3]]  # 取前3个最大字体
+    print(f"DEBUG: Font collection complete. Context font: {context_font}", file=sys.stderr)
 
     # 第二遍：构建结构化内容
     structured_content = []
     current_section = None
     # 遍历每一页
+    print(f"DEBUG: Starting page iteration for content extraction", file=sys.stderr)
     for page_num, page in enumerate(doc):
+        print(f"DEBUG: Processing page {page_num + 1}/{len(doc)}", file=sys.stderr)
         # get blocks
         blocks = page.get_text("dict")
+        print(f"DEBUG: Page {page_num + 1} has {len(blocks['blocks'])} blocks", file=sys.stderr)
 
         i = 0
+        iteration_count = 0  # 防止无限循环
+        max_iterations = len(blocks["blocks"]) * 2  # 最多迭代块数量的2倍
+
         while i < len(blocks["blocks"]):
+            if iteration_count % 10 == 0:  # 每10次迭代打印一次
+                print(f"DEBUG: Page {page_num + 1}, block {i}/{len(blocks['blocks'])}, iteration {iteration_count}", file=sys.stderr)
+            # 防止无限循环
+            iteration_count += 1
+            if iteration_count > max_iterations:
+                import sys
+                print(f"WARNING: Infinite loop detected on page {page_num}, block {i}. Breaking.", file=sys.stderr)
+                break
+
             block = blocks["blocks"][i]
             content = ""
             # get block and title if the block contains one
@@ -84,6 +102,13 @@ def analyze_text_structure(doc):
             if "lines" not in block or not check_context_block(block["lines"], context_font, title_fonts)[0]:
                 should_trim, re_start = check_consecutive_non_context(blocks, i, context_font, title_fonts)
                 if should_trim:
+                    # re_start is already the next position to process (end+1)
+                    # Ensure we're making forward progress
+                    if re_start <= i:
+                        import sys
+                        print(f"WARNING: check_consecutive_non_context returned re_start={re_start} <= i={i} on page {page_num}. Forcing i+1.", file=sys.stderr)
+                        i += 1
+                        continue
                     i = re_start
                     continue
             # if content exists(title + content or None + content)
@@ -156,10 +181,13 @@ def analyze_text_structure(doc):
 
             i += 1
 
+        print(f"DEBUG: Completed page {page_num + 1}, total iterations: {iteration_count}", file=sys.stderr)
+
     # 最后一个章节
     if current_section:
         structured_content.append(current_section)
 
+    print(f"DEBUG: Content extraction complete, total sections: {len(structured_content)}", file=sys.stderr)
     return structured_content
 
 def line_info(line):
@@ -182,6 +210,7 @@ def line_info(line):
 
 def extract_title_from_block(block, title_fonts):
     """只提取标题，不处理内容"""
+    import sys
     titles = []
     if "lines" not in block:
         return titles
@@ -191,7 +220,14 @@ def extract_title_from_block(block, title_fonts):
         return titles
 
     i = 0
+    iteration_count = 0
+    max_iterations = len(lines) * 2
+
     while i < min(4, len(lines)):
+        iteration_count += 1
+        if iteration_count > max_iterations:
+            print(f"WARNING: Infinite loop in extract_title_from_block, line {i}. Breaking.", file=sys.stderr)
+            break
         line = lines[i]
         line_font, line_font_size, line_text = line_info(line)
 
@@ -219,11 +255,16 @@ def extract_title_from_block(block, title_fonts):
     return titles
 
 def extract_content_from_block(block, context_font, title_fonts):
+    import sys
     if "lines" not in block:
         return None
     # skip until content font is not dominant
     skip_lines = 0
     lines = block["lines"]
+
+    if len(lines) > 1000:  # 防止异常大的 block
+        print(f"WARNING: Block has {len(lines)} lines, may cause performance issues", file=sys.stderr)
+
     for i, line in enumerate(lines):
         line_font, line_font_size, _ = line_info(line)
         if (line_font, line_font_size) == context_font:

@@ -15,34 +15,16 @@ import (
 
 type GrpcClients struct {
 	// connections
-	apiKeyConn    *grpc.ClientConn
 	embeddingConn *grpc.ClientConn
 
 	// servers
-	APIKeyClient    pb.APIKeyServiceClient
 	EmbeddingClient pb.EmbeddingServiceClient
 }
 
 func NewGrpcClients(cfg *config.Config) *GrpcClients {
 	clients := &GrpcClients{}
-	apiKeyConn, err := createGrpcConnection(cfg.GrpcServerAddr)
-	if err != nil {
-		logging.Logger.Error("fail createGrpcConnection", err)
-		return nil
-	}
-	clients.apiKeyConn = apiKeyConn
-	clients.APIKeyClient = pb.NewAPIKeyServiceClient(apiKeyConn)
-
-	logging.Logger.Info("Connected to API Key Service", "addr", cfg.GrpcServerAddr)
-
 	embeddingConn, err := createGrpcConnection(cfg.GrpcEmbeddingAddr)
 	if err != nil {
-		if embeddingConn != nil {
-			err := apiKeyConn.Close()
-			if err != nil {
-				logging.Logger.Error("fail close embeddingConn", err)
-			}
-		}
 		logging.Logger.Error("fail createGrpcConnection", err)
 		return nil
 	}
@@ -89,14 +71,6 @@ func createGrpcConnection(address string) (*grpc.ClientConn, error) {
 }
 func (c *GrpcClients) Close() error {
 	var errs []error
-
-	if c.apiKeyConn != nil {
-		if err := c.apiKeyConn.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to close API Key connection: %w", err))
-		} else {
-			logging.Logger.Info("API Key connection closed")
-		}
-	}
 
 	if c.embeddingConn != nil {
 		if err := c.embeddingConn.Close(); err != nil {

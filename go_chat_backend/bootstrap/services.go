@@ -8,17 +8,19 @@ type Services struct {
 	GrpcServices     *services.GRPCService
 	ChatsService     *services.ChatService
 	LLMConfigService *services.LLMConfigService
+	RagService       *services.RagModeService
 }
 
 func NewServices(repos *Repositories, infra *Infrastructure) *Services {
 	res := &Services{}
 
-	// LLM 配置服务
 	llmConfigService := services.NewLLMConfigService(infra.Cache)
 	res.LLMConfigService = llmConfigService
 
-	// 文档服务（注入 LLM 配置服务）
-	docService := services.NewDocumentService(repos.DocumentRepository, repos.ChatRepository, infra.Queue, infra.Storage, infra.Cache, llmConfigService)
+	ragService := services.NewRagModeService(infra.Cache, repos.DocumentRepository)
+	res.RagService = ragService
+
+	docService := services.NewDocumentService(repos.DocumentRepository, repos.ChatRepository, infra.Queue, infra.Storage, infra.Cache, llmConfigService, ragService)
 	res.DocService = docService
 
 	chunkService := services.NewChunkService(infra.DB)
@@ -28,7 +30,9 @@ func NewServices(repos *Repositories, infra *Infrastructure) *Services {
 
 	// LLM 服务（注入 GRPCService）
 	llmServices := services.NewLLMService(repos.ChunkRepository, grpcServices)
-	chatServices := services.NewChatService(infra.DB, infra.Cache, llmServices, llmConfigService)
+	chatServices := services.NewChatService(repos.ChatRepository, repos.DocumentRepository, infra.Cache, llmServices, llmConfigService, ragService)
 	res.ChatsService = chatServices
+
+
 	return res
 }

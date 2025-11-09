@@ -394,131 +394,18 @@ func (x *IngestResponse) GetFileId() string {
 	return ""
 }
 
-type APIKeyRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"` // 任务 ID（用于匹配）
-	ApiKey        string                 `protobuf:"bytes,2,opt,name=api_key,json=apiKey,proto3" json:"api_key,omitempty"` // API Key (OpenAI, Gemini, etc.)
-	Provider      string                 `protobuf:"bytes,3,opt,name=provider,proto3" json:"provider,omitempty"`           // Provider name: "openai" or "gemini"
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *APIKeyRequest) Reset() {
-	*x = APIKeyRequest{}
-	mi := &file_cognicore_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *APIKeyRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*APIKeyRequest) ProtoMessage() {}
-
-func (x *APIKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cognicore_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use APIKeyRequest.ProtoReflect.Descriptor instead.
-func (*APIKeyRequest) Descriptor() ([]byte, []int) {
-	return file_cognicore_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *APIKeyRequest) GetTaskId() string {
-	if x != nil {
-		return x.TaskId
-	}
-	return ""
-}
-
-func (x *APIKeyRequest) GetApiKey() string {
-	if x != nil {
-		return x.ApiKey
-	}
-	return ""
-}
-
-func (x *APIKeyRequest) GetProvider() string {
-	if x != nil {
-		return x.Provider
-	}
-	return ""
-}
-
-type APIKeyResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *APIKeyResponse) Reset() {
-	*x = APIKeyResponse{}
-	mi := &file_cognicore_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *APIKeyResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*APIKeyResponse) ProtoMessage() {}
-
-func (x *APIKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cognicore_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use APIKeyResponse.ProtoReflect.Descriptor instead.
-func (*APIKeyResponse) Descriptor() ([]byte, []int) {
-	return file_cognicore_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *APIKeyResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
-	}
-	return false
-}
-
-func (x *APIKeyResponse) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
-}
-
+// Embedding 请求（Go 调用 Python 时使用）
 type EmbeddingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"` // 任务 ID（用于日志追踪）
 	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`                   // 要向量化的文本
-	ApiKey        string                 `protobuf:"bytes,3,opt,name=api_key,json=apiKey,proto3" json:"api_key,omitempty"` // API Key (OpenAI, Gemini, etc.)
-	Provider      string                 `protobuf:"bytes,4,opt,name=provider,proto3" json:"provider,omitempty"`           // Provider name: "openai" or "gemini"
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EmbeddingRequest) Reset() {
 	*x = EmbeddingRequest{}
-	mi := &file_cognicore_proto_msgTypes[6]
+	mi := &file_cognicore_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -530,7 +417,7 @@ func (x *EmbeddingRequest) String() string {
 func (*EmbeddingRequest) ProtoMessage() {}
 
 func (x *EmbeddingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_cognicore_proto_msgTypes[6]
+	mi := &file_cognicore_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -543,7 +430,7 @@ func (x *EmbeddingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EmbeddingRequest.ProtoReflect.Descriptor instead.
 func (*EmbeddingRequest) Descriptor() ([]byte, []int) {
-	return file_cognicore_proto_rawDescGZIP(), []int{6}
+	return file_cognicore_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *EmbeddingRequest) GetTaskId() string {
@@ -560,20 +447,7 @@ func (x *EmbeddingRequest) GetText() string {
 	return ""
 }
 
-func (x *EmbeddingRequest) GetApiKey() string {
-	if x != nil {
-		return x.ApiKey
-	}
-	return ""
-}
-
-func (x *EmbeddingRequest) GetProvider() string {
-	if x != nil {
-		return x.Provider
-	}
-	return ""
-}
-
+// Embedding 响应
 type EmbeddingResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -586,7 +460,7 @@ type EmbeddingResponse struct {
 
 func (x *EmbeddingResponse) Reset() {
 	*x = EmbeddingResponse{}
-	mi := &file_cognicore_proto_msgTypes[7]
+	mi := &file_cognicore_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -598,7 +472,7 @@ func (x *EmbeddingResponse) String() string {
 func (*EmbeddingResponse) ProtoMessage() {}
 
 func (x *EmbeddingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_cognicore_proto_msgTypes[7]
+	mi := &file_cognicore_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -611,7 +485,7 @@ func (x *EmbeddingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EmbeddingResponse.ProtoReflect.Descriptor instead.
 func (*EmbeddingResponse) Descriptor() ([]byte, []int) {
-	return file_cognicore_proto_rawDescGZIP(), []int{7}
+	return file_cognicore_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *EmbeddingResponse) GetSuccess() bool {
@@ -680,19 +554,10 @@ const file_cognicore_proto_rawDesc = "" +
 	"\rchunks_stored\x18\x04 \x01(\x05R\fchunksStored\x12#\n" +
 	"\rchunks_failed\x18\x05 \x01(\x05R\fchunksFailed\x12,\n" +
 	"\x12processing_time_ms\x18\a \x01(\x03R\x10processingTimeMs\x12\x17\n" +
-	"\afile_id\x18\b \x01(\tR\x06fileId\"]\n" +
-	"\rAPIKeyRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x17\n" +
-	"\aapi_key\x18\x02 \x01(\tR\x06apiKey\x12\x1a\n" +
-	"\bprovider\x18\x03 \x01(\tR\bprovider\"D\n" +
-	"\x0eAPIKeyResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"t\n" +
+	"\afile_id\x18\b \x01(\tR\x06fileId\"?\n" +
 	"\x10EmbeddingRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x12\n" +
-	"\x04text\x18\x02 \x01(\tR\x04text\x12\x17\n" +
-	"\aapi_key\x18\x03 \x01(\tR\x06apiKey\x12\x1a\n" +
-	"\bprovider\x18\x04 \x01(\tR\bprovider\"\x85\x01\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\"\x85\x01\n" +
 	"\x11EmbeddingResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1e\n" +
@@ -702,11 +567,9 @@ const file_cognicore_proto_rawDesc = "" +
 	"\tdimension\x18\x04 \x01(\x05R\tdimension2\x9e\x01\n" +
 	"\rIngestService\x12G\n" +
 	"\x0eIngestDocument\x12\x18.cognicore.IngestRequest\x1a\x19.cognicore.IngestResponse(\x01\x12D\n" +
-	"\x11IngestSingleChunk\x12\x14.cognicore.TextChunk\x1a\x19.cognicore.IngestResponse2U\n" +
-	"\rAPIKeyService\x12D\n" +
-	"\rProvideAPIKey\x12\x18.cognicore.APIKeyRequest\x1a\x19.cognicore.APIKeyResponse2]\n" +
+	"\x11IngestSingleChunk\x12\x14.cognicore.TextChunk\x1a\x19.cognicore.IngestResponse2]\n" +
 	"\x10EmbeddingService\x12I\n" +
-	"\fGetEmbedding\x12\x1b.cognicore.EmbeddingRequest\x1a\x1c.cognicore.EmbeddingResponseB*Z(go_chat_backend/platform/proto/cognicoreb\x06proto3"
+	"\fGetEmbedding\x12\x1b.cognicore.EmbeddingRequest\x1a\x1c.cognicore.EmbeddingResponseB>Z<github.com/ZZZiggy_/go_chat_backend/platform/proto/cognicoreb\x06proto3"
 
 var (
 	file_cognicore_proto_rawDescOnce sync.Once
@@ -720,30 +583,26 @@ func file_cognicore_proto_rawDescGZIP() []byte {
 	return file_cognicore_proto_rawDescData
 }
 
-var file_cognicore_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_cognicore_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_cognicore_proto_goTypes = []any{
 	(*TextChunk)(nil),         // 0: cognicore.TextChunk
 	(*DocumentMetadata)(nil),  // 1: cognicore.DocumentMetadata
 	(*IngestRequest)(nil),     // 2: cognicore.IngestRequest
 	(*IngestResponse)(nil),    // 3: cognicore.IngestResponse
-	(*APIKeyRequest)(nil),     // 4: cognicore.APIKeyRequest
-	(*APIKeyResponse)(nil),    // 5: cognicore.APIKeyResponse
-	(*EmbeddingRequest)(nil),  // 6: cognicore.EmbeddingRequest
-	(*EmbeddingResponse)(nil), // 7: cognicore.EmbeddingResponse
+	(*EmbeddingRequest)(nil),  // 4: cognicore.EmbeddingRequest
+	(*EmbeddingResponse)(nil), // 5: cognicore.EmbeddingResponse
 }
 var file_cognicore_proto_depIdxs = []int32{
 	1, // 0: cognicore.IngestRequest.metadata:type_name -> cognicore.DocumentMetadata
 	0, // 1: cognicore.IngestRequest.chunk:type_name -> cognicore.TextChunk
 	2, // 2: cognicore.IngestService.IngestDocument:input_type -> cognicore.IngestRequest
 	0, // 3: cognicore.IngestService.IngestSingleChunk:input_type -> cognicore.TextChunk
-	4, // 4: cognicore.APIKeyService.ProvideAPIKey:input_type -> cognicore.APIKeyRequest
-	6, // 5: cognicore.EmbeddingService.GetEmbedding:input_type -> cognicore.EmbeddingRequest
-	3, // 6: cognicore.IngestService.IngestDocument:output_type -> cognicore.IngestResponse
-	3, // 7: cognicore.IngestService.IngestSingleChunk:output_type -> cognicore.IngestResponse
-	5, // 8: cognicore.APIKeyService.ProvideAPIKey:output_type -> cognicore.APIKeyResponse
-	7, // 9: cognicore.EmbeddingService.GetEmbedding:output_type -> cognicore.EmbeddingResponse
-	6, // [6:10] is the sub-list for method output_type
-	2, // [2:6] is the sub-list for method input_type
+	4, // 4: cognicore.EmbeddingService.GetEmbedding:input_type -> cognicore.EmbeddingRequest
+	3, // 5: cognicore.IngestService.IngestDocument:output_type -> cognicore.IngestResponse
+	3, // 6: cognicore.IngestService.IngestSingleChunk:output_type -> cognicore.IngestResponse
+	5, // 7: cognicore.EmbeddingService.GetEmbedding:output_type -> cognicore.EmbeddingResponse
+	5, // [5:8] is the sub-list for method output_type
+	2, // [2:5] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name
@@ -764,9 +623,9 @@ func file_cognicore_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cognicore_proto_rawDesc), len(file_cognicore_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   6,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   2,
 		},
 		GoTypes:           file_cognicore_proto_goTypes,
 		DependencyIndexes: file_cognicore_proto_depIdxs,
